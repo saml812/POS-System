@@ -1,13 +1,14 @@
 import express from "express";
 import cors from "cors";
-import session from "express-session";
-import { ENV } from "./config/env.js";
-import { connectDB, disconnectDB } from "./config/db.js";
+import passport from "./lib/passport.js";
+import { sessionMiddleware, sessionStore } from "./lib/session.js";
+import { ENV } from "./lib/env.js";
+import { connectDB, disconnectDB } from "./lib/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
-const PORT = Number(ENV.PORT) || 3000;
+const PORT = ENV.PORT || 3000;
 
 app.use(
   cors({
@@ -18,22 +19,12 @@ app.use(
 
 app.use(express.json());
 
-app.use(
-  session({
-    secret: ENV.SESSION_SECRET ?? "dev-only-change-me",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: ENV.NODE_ENV === "production" ? "strict" : "lax",
-      secure: ENV.NODE_ENV === "production",
-      maxAge: 1000 * 60 * 60 * 8,
-    },
-  })
-);
+app.use(sessionMiddleware);
 
-app.use("/api", healthRoutes);
-app.use("/api", authRoutes);
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.use("/api/auth", authRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
@@ -57,10 +48,15 @@ process.on("uncaughtException", async (err) => {
   process.exit(1);
 });
 
+async function shutdown() {
+  await sessionStore.shutdown();
+  await disconnectDB();
+}
+
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully");
   server.close(async () => {
-    await disconnectDB();
+    await shutdown();
     process.exit(0);
   });
 });
