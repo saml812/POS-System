@@ -5,6 +5,7 @@ import { sessionMiddleware, sessionStore } from "./lib/session.js";
 import { ENV } from "./lib/env.js";
 import { connectDB, disconnectDB } from "./lib/db.js";
 import authRoutes from "./routes/auth.routes.js";
+import menuRoutes from "./routes/menu.routes.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -25,6 +26,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/menu", menuRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
