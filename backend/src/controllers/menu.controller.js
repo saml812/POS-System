@@ -4,8 +4,6 @@ import { parseLocale, parseOptionalText } from "../lib/menuLocale.js";
 import { translateTexts } from "../lib/translate.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-// Returns the translated text from the map, falling back to the original.
-// `translations` is null when serving English (no translation requested).
 function localize(text, translations) {
   if (!text || !translations) {
     return text ?? null;
@@ -149,12 +147,6 @@ const publicItemInclude = {
   },
 };
 
-/**
- * Builds a Map<sourceText, translatedText> covering every name/description in
- * the menu tree, using the translation API (results are cached in memory).
- * Returns an empty map when translation is disabled or fails, so callers fall
- * back to the original English text.
- */
 async function buildMenuTranslations(categories) {
   const texts = [];
   for (const category of categories) {

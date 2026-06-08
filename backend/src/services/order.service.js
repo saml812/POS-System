@@ -1,8 +1,9 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { localizedName, parseLocale } from "../lib/menuLocale.js";
+import { parseLocale } from "../lib/menuLocale.js";
 import { getNextTicketNumber } from "../lib/shift.js";
 import { emitOrderEvent } from "../lib/socket.js";
+import { translateTexts } from "../lib/translate.js";
 
 const orderInclude = {
   items: { include: { options: true } },
@@ -84,84 +85,97 @@ export async function createOrder(user, { items, locale: localeInput }) {
 
   const locale = parseLocale(localeInput);
 
-  const order = await prisma.$transaction(async (tx) => {
-    const ticketNumber = await getNextTicketNumber(tx);
-    const lineItems = [];
-    const parsedEntries = items.map((entry) => {
-      const menuItemId = entry.menuItemId?.trim();
-      const quantity = Number(entry.quantity ?? 1);
+  const parsedEntries = items.map((entry) => {
+    const menuItemId = entry.menuItemId?.trim();
+    const quantity = Number(entry.quantity ?? 1);
 
-      if (!menuItemId) {
-        throw appError("Each item requires a menuItemId");
-      }
-
-      if (!Number.isInteger(quantity) || quantity < 1) {
-        throw appError("quantity must be a positive integer");
-      }
-
-      const optionIds = Array.isArray(entry.optionIds)
-        ? [...new Set(entry.optionIds.map((id) => String(id).trim()).filter(Boolean))]
-        : [];
-
-      const preferences =
-        typeof entry.preferences === "string"
-          ? entry.preferences.trim() || null
-          : null;
-
-      return { menuItemId, quantity, optionIds, preferences };
-    });
-
-    const menuItemIds = [...new Set(parsedEntries.map((entry) => entry.menuItemId))];
-    const menuItems = await tx.menuItem.findMany({
-      where: {
-        id: { in: menuItemIds },
-        isAvailable: true,
-      },
-      include: {
-        options: {
-          where: { isAvailable: true },
-        },
-      },
-    });
-    const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
-
-    for (const entry of parsedEntries) {
-      const menuItem = menuItemById.get(entry.menuItemId);
-      if (!menuItem) {
-        throw appError(`Menu item not available: ${entry.menuItemId}`);
-      }
-
-      const selectedOptions = [];
-      for (const optionId of entry.optionIds) {
-        const option = menuItem.options.find((row) => row.id === optionId);
-        if (!option) {
-          throw appError(`Invalid option for ${menuItem.name}: ${optionId}`);
-        }
-        selectedOptions.push(option);
-      }
-
-      const optionTotal = selectedOptions.reduce(
-        (sum, option) => sum + Number(option.priceDelta),
-        0,
-      );
-      const unitPrice = Number(menuItem.price) + optionTotal;
-
-      lineItems.push({
-        menuItemId: menuItem.id,
-        itemCode: menuItem.itemNumber ?? null,
-        name: localizedName(menuItem, locale),
-        price: unitPrice,
-        quantity: entry.quantity,
-        preferences: entry.preferences,
-        options: {
-          create: selectedOptions.map((option) => ({
-            name: localizedName(option, locale),
-            priceDelta: option.priceDelta,
-          })),
-        },
-      });
+    if (!menuItemId) {
+      throw appError("Each item requires a menuItemId");
     }
 
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw appError("quantity must be a positive integer");
+    }
+
+    const optionIds = Array.isArray(entry.optionIds)
+      ? [...new Set(entry.optionIds.map((id) => String(id).trim()).filter(Boolean))]
+      : [];
+
+    const preferences =
+      typeof entry.preferences === "string"
+        ? entry.preferences.trim() || null
+        : null;
+
+    return { menuItemId, quantity, optionIds, preferences };
+  });
+
+  const menuItemIds = [...new Set(parsedEntries.map((entry) => entry.menuItemId))];
+  const menuItems = await prisma.menuItem.findMany({
+    where: {
+      id: { in: menuItemIds },
+      isAvailable: true,
+    },
+    include: {
+      options: {
+        where: { isAvailable: true },
+      },
+    },
+  });
+  const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
+
+  let nameTranslations = new Map();
+  if (locale === "zh") {
+    const texts = [];
+    for (const item of menuItems) {
+      texts.push(item.name);
+      for (const option of item.options) {
+        texts.push(option.name);
+      }
+    }
+    nameTranslations = await translateTexts(texts);
+  }
+  const localizeName = (name) => nameTranslations.get(name?.trim()) ?? name;
+
+  const lineItems = [];
+  for (const entry of parsedEntries) {
+    const menuItem = menuItemById.get(entry.menuItemId);
+    if (!menuItem) {
+      throw appError(`Menu item not available: ${entry.menuItemId}`);
+    }
+
+    const selectedOptions = [];
+    for (const optionId of entry.optionIds) {
+      const option = menuItem.options.find((row) => row.id === optionId);
+      if (!option) {
+        throw appError(`Invalid option for ${menuItem.name}: ${optionId}`);
+      }
+      selectedOptions.push(option);
+    }
+
+    const optionTotal = selectedOptions.reduce(
+      (sum, option) => sum + Number(option.priceDelta),
+      0,
+    );
+    const unitPrice = Number(menuItem.price) + optionTotal;
+
+    lineItems.push({
+      menuItemId: menuItem.id,
+      itemCode: menuItem.itemNumber ?? null,
+      name: localizeName(menuItem.name),
+      price: unitPrice,
+      quantity: entry.quantity,
+      preferences: entry.preferences,
+      options: {
+        create: selectedOptions.map((option) => ({
+          name: localizeName(option.name),
+          priceDelta: option.priceDelta,
+        })),
+      },
+    });
+  }
+
+  const order = await prisma.$transaction(async (tx) => {
+    const ticketNumber = await getNextTicketNumber(tx);
     const created = await tx.order.create({
       data: {
         ticketNumber,
