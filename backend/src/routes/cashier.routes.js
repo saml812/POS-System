@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getCashierFeed } from "../controllers/cashier.controller.js";
+import { getCashierFeed } from "../controllers/order.controller.js";
 import { requireAuth, allowRoles } from "../middleware/auth.middleware.js";
 
 const router = Router();

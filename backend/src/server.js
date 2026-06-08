@@ -11,6 +11,8 @@ import menuRoutes from "./routes/menu.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import kitchenRoutes from "./routes/kitchen.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
+import settingsRoutes from "./routes/settings.routes.js";
+import { refreshTicketResetConfig } from "./lib/ticketResetConfig.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -36,6 +38,7 @@ app.use("/api/menu", menuRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/kitchen", kitchenRoutes);
 app.use("/api/cashier", cashierRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
@@ -44,6 +47,7 @@ initSocket(httpServer);
 
 const server = httpServer.listen(PORT, async () => {
   await connectDB();
+  await refreshTicketResetConfig();
   console.log(`Server running on PORT ${PORT}`);
 });
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getKitchenFeed } from "../controllers/kitchen.controller.js";
+import { getKitchenFeed } from "../controllers/order.controller.js";
 import { requireAuth, allowRoles } from "../middleware/auth.middleware.js";
 
 const router = Router();

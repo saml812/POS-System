@@ -25,23 +25,15 @@ const errorHandler = (err, req, res, next) => {
     err.message = "Invalid data provided";
   }
 
-  // Handle Prisma unique constraint violations
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === "P2002") {
       const field = err.meta?.target?.[0] || "field";
       err.statusCode = 400;
       err.message = `${field} already exists`;
-    }
-    // Handle record not found
-    if (err.code === "P2025") {
+    } else if (err.code === "P2025") {
       err.statusCode = 404;
       err.message = "Record not found";
-    }
-  }
-
-  // Handle Prisma foreign key constraint violations
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code === "P2003") {
+    } else if (err.code === "P2003") {
       err.statusCode = 400;
       err.message = "Invalid reference: related record does not exist";
     }
