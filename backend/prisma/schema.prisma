@@ -46,7 +46,6 @@ model Session {
 model Category {
   id        String     @id @default(cuid())
   name      String
-  nameZh    String?
   sortOrder Int        @default(0)
   isActive  Boolean    @default(true)
   items     MenuItem[]
@@ -60,9 +59,7 @@ model MenuItem {
   id            String           @id @default(cuid())
   itemNumber    String?
   name          String
-  nameZh        String?
   description   String?
-  descriptionZh String?
   price       Decimal          @db.Decimal(10, 2)
   sortOrder   Int              @default(0)
   isAvailable Boolean          @default(true)
@@ -81,7 +78,6 @@ model MenuItemOption {
   menuItemId  String
   menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   name        String
-  nameZh      String?
   priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)

@@ -1,78 +1,48 @@
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import * as orderService from "../services/order.service.js";
 
-export async function createOrder(req, res, next) {
-  try {
-    const order = await orderService.createOrder(req.user, req.body);
-    res.status(201).json({ order });
-  } catch (error) {
-    next(error);
-  }
-}
+export const createOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.createOrder(req.user, req.body);
+  res.status(201).json({ order });
+});
 
-export async function getActiveOrders(req, res, next) {
-  try {
-    const status = req.query.status;
-    const orders = await orderService.getActiveOrders(
-      status ? { status } : {},
-    );
-    res.json({ orders });
-  } catch (error) {
-    next(error);
-  }
-}
+export const getActiveOrders = asyncHandler(async (req, res) => {
+  const orders = await orderService.getActiveOrders(
+    req.query.status ? { status: req.query.status } : {},
+  );
+  res.json({ orders });
+});
 
-export async function getKitchenFeed(req, res, next) {
-  try {
-    const includeVoided = req.query.includeVoided === "true";
-    const orders = await orderService.getKitchenFeed({ includeVoided });
-    res.json({ orders });
-  } catch (error) {
-    next(error);
-  }
-}
+export const getKitchenFeed = asyncHandler(async (req, res) => {
+  const orders = await orderService.getKitchenFeed({
+    includeVoided: req.query.includeVoided === "true",
+  });
+  res.json({ orders });
+});
 
-export async function getCashierFeed(req, res, next) {
-  try {
-    const includeInProgress = req.query.includeInProgress === "true";
-    const orders = await orderService.getCashierFeed({ includeInProgress });
-    res.json({ orders });
-  } catch (error) {
-    next(error);
-  }
-}
+export const getCashierFeed = asyncHandler(async (req, res) => {
+  const orders = await orderService.getCashierFeed({
+    includeInProgress: req.query.includeInProgress === "true",
+  });
+  res.json({ orders });
+});
 
-export async function completeOrder(req, res, next) {
-  try {
-    const order = await orderService.completeOrder(req.params.id, req.user);
-    res.json({ order });
-  } catch (error) {
-    next(error);
-  }
-}
+export const completeOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.completeOrder(req.params.id, req.user);
+  res.json({ order });
+});
 
-export async function cancelOrder(req, res, next) {
-  try {
-    const order = await orderService.cancelOrder(req.params.id, req.user, req.body);
-    res.json({ order });
-  } catch (error) {
-    next(error);
-  }
-}
+export const cancelOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.cancelOrder(req.params.id, req.user, req.body);
+  res.json({ order });
+});
 
-export async function startOrder(req, res, next) {
-  try {
-    const order = await orderService.startOrder(req.params.id, req.user);
-    res.json({ order });
-  } catch (error) {
-    next(error);
-  }
-}
+export const startOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.startOrder(req.params.id, req.user);
+  res.json({ order });
+});
 
-export async function finishOrder(req, res, next) {
-  try {
-    const order = await orderService.finishOrder(req.params.id, req.user);
-    res.json({ order });
-  } catch (error) {
-    next(error);
-  }
-}
+export const finishOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.finishOrder(req.params.id, req.user);
+  res.json({ order });
+});
