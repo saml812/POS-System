@@ -1,4 +1,4 @@
-import { ENV } from "../src/lib/env";
+import { ENV } from "../src/lib/env.js";
 import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
@@ -17,7 +17,31 @@ const demoUsers = [
   { email: "manager@demo.com", role: "MANAGER" as const },
 ];
 
-const demoMenu = [
+type SeedOption = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  sortOrder: number;
+};
+
+type SeedItem = {
+  id: string;
+  itemNumber: string | null;
+  name: string;
+  description: string;
+  price: number;
+  sortOrder: number;
+  options?: SeedOption[];
+};
+
+type SeedCategory = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  items: SeedItem[];
+};
+
+const demoMenu: SeedCategory[] = [
   {
     id: "appetizers",
     name: "Appetizers",
@@ -25,6 +49,7 @@ const demoMenu = [
     items: [
       {
         id: "garlic-bread",
+        itemNumber: "A1",
         name: "Garlic Bread",
         description: "Toasted bread with garlic butter",
         price: 5.99,
@@ -32,41 +57,126 @@ const demoMenu = [
       },
       {
         id: "caesar-salad",
+        itemNumber: "A2",
         name: "Caesar Salad",
         description: "Romaine, parmesan, croutons",
         price: 8.99,
         sortOrder: 1,
+        options: [
+          {
+            id: "caesar-no-onions",
+            name: "No onions",
+            priceDelta: 0,
+            sortOrder: 0,
+          },
+          {
+            id: "caesar-extra-cheese",
+            name: "Extra cheese",
+            priceDelta: 1.5,
+            sortOrder: 1,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "soups",
+    name: "Soups",
+    sortOrder: 1,
+    items: [
+      {
+        id: "tomato-soup",
+        itemNumber: "S1",
+        name: "Tomato Soup",
+        description: "Daily soup",
+        price: 6.49,
+        sortOrder: 0,
+      },
+    ],
+  },
+  {
+    id: "combos",
+    name: "Special Combos",
+    sortOrder: 2,
+    items: [
+      {
+        id: "lunch-combo",
+        itemNumber: "C1",
+        name: "Lunch Combo",
+        description: "Main + drink",
+        price: 14.99,
+        sortOrder: 0,
+      },
+    ],
+  },
+  {
+    id: "sides",
+    name: "Sides",
+    sortOrder: 3,
+    items: [
+      {
+        id: "fries",
+        itemNumber: null,
+        name: "French Fries",
+        description: "Crispy fries",
+        price: 3.99,
+        sortOrder: 0,
       },
     ],
   },
   {
     id: "mains",
     name: "Mains",
-    sortOrder: 1,
+    sortOrder: 4,
     items: [
       {
         id: "margherita-pizza",
+        itemNumber: "1",
         name: "Margherita Pizza",
         description: "Tomato, mozzarella, basil",
         price: 12.99,
         sortOrder: 0,
+        options: [
+          {
+            id: "pizza-extra-cheese",
+            name: "Extra cheese",
+            priceDelta: 2,
+            sortOrder: 0,
+          },
+        ],
       },
       {
         id: "grilled-chicken",
+        itemNumber: "2",
         name: "Grilled Chicken",
         description: "Served with seasonal vegetables",
         price: 15.99,
         sortOrder: 1,
+        options: [
+          {
+            id: "chicken-extra",
+            name: "Extra chicken",
+            priceDelta: 3.5,
+            sortOrder: 0,
+          },
+          {
+            id: "chicken-no-veg",
+            name: "No vegetables",
+            priceDelta: 0,
+            sortOrder: 1,
+          },
+        ],
       },
     ],
   },
   {
     id: "drinks",
     name: "Drinks",
-    sortOrder: 2,
+    sortOrder: 5,
     items: [
       {
         id: "soft-drink",
+        itemNumber: "11",
         name: "Soft Drink",
         description: "330ml can",
         price: 2.99,
@@ -74,6 +184,7 @@ const demoMenu = [
       },
       {
         id: "house-coffee",
+        itemNumber: "12",
         name: "House Coffee",
         description: "Freshly brewed",
         price: 3.49,
@@ -84,10 +195,11 @@ const demoMenu = [
   {
     id: "desserts",
     name: "Desserts",
-    sortOrder: 3,
+    sortOrder: 6,
     items: [
       {
         id: "chocolate-brownie",
+        itemNumber: "21",
         name: "Chocolate Brownie",
         description: "Warm brownie with ice cream",
         price: 6.99,
@@ -136,6 +248,7 @@ async function main() {
         where: { id: item.id },
         update: {
           name: item.name,
+          itemNumber: item.itemNumber,
           description: item.description,
           price: item.price,
           sortOrder: item.sortOrder,
@@ -144,12 +257,32 @@ async function main() {
         create: {
           id: item.id,
           name: item.name,
+          itemNumber: item.itemNumber,
           description: item.description,
           price: item.price,
           sortOrder: item.sortOrder,
           categoryId: createdCategory.id,
         },
       });
+
+      for (const option of item.options ?? []) {
+        await prisma.menuItemOption.upsert({
+          where: { id: option.id },
+          update: {
+            name: option.name,
+            priceDelta: option.priceDelta,
+            sortOrder: option.sortOrder,
+            menuItemId: item.id,
+          },
+          create: {
+            id: option.id,
+            name: option.name,
+            priceDelta: option.priceDelta,
+            sortOrder: option.sortOrder,
+            menuItemId: item.id,
+          },
+        });
+      }
     }
   }
 
