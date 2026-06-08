@@ -8,9 +8,9 @@
     "start": "tsx src/server.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
-    "db:seed": "prisma db seed",
-    "db:verify": "tsx scripts/verify-prisma.ts"
+    "db:seed": "prisma db seed"
   },
   "keywords": [],
   "author": "",
@@ -27,7 +27,8 @@
     "express-session": "^1.18.1",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",

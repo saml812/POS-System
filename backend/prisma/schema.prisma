@@ -13,14 +13,27 @@ enum Role {
   MANAGER
 }
 
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  FINISHED
+  COMPLETED
+  CANCELLED
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  role      Role     @default(CASHIER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  role            Role             @default(CASHIER)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  ordersPlaced    Order[]          @relation("OrderPlacedBy")
+  ordersCancelled Order[]          @relation("OrderCancelledBy")
+  ordersFinished  Order[]          @relation("OrderFinishedBy")
+  ordersCompleted Order[]          @relation("OrderCompletedBy")
+  orderStatusLogs OrderStatusLog[]
 }
 
 model Session {
@@ -33,24 +46,114 @@ model Session {
 model Category {
   id        String     @id @default(cuid())
   name      String
+  nameZh    String?
   sortOrder Int        @default(0)
   isActive  Boolean    @default(true)
   items     MenuItem[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  @@index([isActive, sortOrder])
 }
 
 model MenuItem {
+  id            String           @id @default(cuid())
+  itemNumber    String?
+  name          String
+  nameZh        String?
+  description   String?
+  descriptionZh String?
+  price       Decimal          @db.Decimal(10, 2)
+  sortOrder   Int              @default(0)
+  isAvailable Boolean          @default(true)
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  options     MenuItemOption[]
+  orderItems  OrderItem[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([categoryId, isAvailable, sortOrder])
+}
+
+model MenuItemOption {
   id          String   @id @default(cuid())
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
+  nameZh      String?
+  priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([categoryId])
+  @@index([menuItemId, isAvailable, sortOrder])
+}
+
+model Order {
+  id             String           @id @default(cuid())
+  ticketNumber   Int
+  status         OrderStatus      @default(PENDING)
+  previousStatus OrderStatus?
+  cancelReason   String?
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelledBy    User?            @relation("OrderCancelledBy", fields: [cancelledById], references: [id])
+  finishedAt     DateTime?
+  finishedById   String?
+  finishedBy     User?            @relation("OrderFinishedBy", fields: [finishedById], references: [id])
+  completedAt    DateTime?
+  completedById  String?
+  completedBy    User?            @relation("OrderCompletedBy", fields: [completedById], references: [id])
+  placedById     String
+  placedBy       User             @relation("OrderPlacedBy", fields: [placedById], references: [id])
+  items          OrderItem[]
+  statusLogs     OrderStatusLog[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([ticketNumber])
+}
+
+model AppSetting {
+  key   String @id
+  value String
+}
+
+model OrderItem {
+  id         String            @id @default(cuid())
+  orderId    String
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem          @relation(fields: [menuItemId], references: [id])
+  itemCode   String?
+  name       String
+  price      Decimal           @db.Decimal(10, 2)
+  quantity    Int               @default(1)
+  preferences String?
+  options     OrderItemOption[]
+  @@index([orderId])
+}
+
+model OrderItemOption {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  name        String
+  priceDelta  Decimal   @db.Decimal(10, 2)
+  @@index([orderItemId])
+}
+
+model OrderStatusLog {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  changedById String
+  changedBy   User         @relation(fields: [changedById], references: [id])
+  createdAt   DateTime     @default(now())
+  @@index([orderId])
 }

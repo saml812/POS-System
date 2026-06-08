@@ -5,11 +5,6 @@ function toSessionUser(user) {
   return { id, email, role };
 }
 
-function toFullUser(user) {
-  const { id, email, role, isActive, createdAt, updatedAt } = user;
-  return { id, email, role, isActive, createdAt, updatedAt };
-}
-
 export function getStatus(req, res) {
   if (req.isAuthenticated?.() && req.user) {
     return res.json({
@@ -59,8 +54,4 @@ export function logout(req, res, next) {
       res.json({ message: "Logged out successfully" });
     });
   });
-}
-
-export function getMe(req, res) {
-  res.json({ user: toFullUser(req.user) });
 }

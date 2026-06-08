@@ -1,14 +1,20 @@
 import express from "express";
 import cors from "cors";
+import { createServer } from "http";
 import passport from "./lib/passport.js";
 import { sessionMiddleware, sessionStore } from "./lib/session.js";
+import { initSocket } from "./lib/socket.js";
 import { ENV } from "./lib/env.js";
 import { connectDB, disconnectDB } from "./lib/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
+import ordersRoutes from "./routes/orders.routes.js";
+import kitchenRoutes from "./routes/kitchen.routes.js";
+import cashierRoutes from "./routes/cashier.routes.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = ENV.PORT || 3000;
 
 app.use(
@@ -27,11 +33,16 @@ app.use(passport.session());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/menu", menuRoutes);
+app.use("/api/orders", ordersRoutes);
+app.use("/api/kitchen", kitchenRoutes);
+app.use("/api/cashier", cashierRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
 
-const server = app.listen(PORT, async () => {
+initSocket(httpServer);
+
+const server = httpServer.listen(PORT, async () => {
   await connectDB();
   console.log(`Server running on PORT ${PORT}`);
 });
