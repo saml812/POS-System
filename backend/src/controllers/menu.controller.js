@@ -15,9 +15,9 @@ function toCategory(category) {
   };
 }
 
-function toMenuItemOption(option) {
+function toMenuItemModifier(modifier) {
   const { id, menuItemId, name, priceDelta, sortOrder, isAvailable, createdAt, updatedAt } =
-    option;
+    modifier;
   return {
     id,
     menuItemId,
@@ -30,19 +30,40 @@ function toMenuItemOption(option) {
   };
 }
 
-function toMenuItemSize(size) {
-  const { id, menuItemId, name, priceDelta, sortOrder, isAvailable, createdAt, updatedAt } =
-    size;
+function modifierCreateData(body, menuItemId) {
   return {
-    id,
     menuItemId,
-    name,
-    priceDelta: Number(priceDelta),
-    sortOrder,
-    isAvailable,
-    createdAt,
-    updatedAt,
+    name: parseRequiredName(body.name),
+    priceDelta: parsePriceDelta(body.priceDelta ?? 0),
+    sortOrder: parseSortOrder(body.sortOrder),
+    isAvailable: body.isAvailable ?? true,
   };
+}
+
+function modifierUpdateData(body) {
+  const data = {};
+
+  if (body.name !== undefined) {
+    data.name = parseRequiredName(body.name);
+  }
+
+  if (body.priceDelta !== undefined) {
+    data.priceDelta = parsePriceDelta(body.priceDelta);
+  }
+
+  if (body.sortOrder !== undefined) {
+    data.sortOrder = parseSortOrder(body.sortOrder);
+  }
+
+  if (body.isAvailable !== undefined) {
+    data.isAvailable = Boolean(body.isAvailable);
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw appError("No valid fields to update");
+  }
+
+  return data;
 }
 
 function toMenuItem(item) {
@@ -74,11 +95,11 @@ function toMenuItem(item) {
   };
 
   if (options) {
-    result.options = options.map(toMenuItemOption);
+    result.options = options.map(toMenuItemModifier);
   }
 
   if (sizes) {
-    result.sizes = sizes.map(toMenuItemSize);
+    result.sizes = sizes.map(toMenuItemModifier);
   }
 
   return result;
@@ -175,42 +196,47 @@ const publicItemInclude = {
 };
 
 export const getMenu = asyncHandler(async (req, res) => {
-  const categories = await prisma.category.findMany({
-    where: { isActive: true },
-    orderBy: categoryOrder,
-    include: {
-      items: {
-        where: { isAvailable: true },
-        orderBy: itemOrder,
-        include: publicItemInclude,
-      },
-    },
-  });
+  const [categories, items] = await Promise.all([
+    prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: categoryOrder,
+    }),
+    prisma.menuItem.findMany({
+      where: { isAvailable: true, category: { isActive: true } },
+      orderBy: itemOrder,
+      include: publicItemInclude,
+      relationLoadStrategy: "join",
+    }),
+  ]);
+
+  const itemsByCategory = new Map();
+  for (const item of items) {
+    const list = itemsByCategory.get(item.categoryId) ?? [];
+    list.push(toMenuItem(item));
+    itemsByCategory.set(item.categoryId, list);
+  }
 
   res.json({
     categories: categories.map((category) => ({
       ...toCategory(category),
-      items: category.items.map(toMenuItem),
+      items: itemsByCategory.get(category.id) ?? [],
     })),
   });
 });
 
 export const getMenuAdmin = asyncHandler(async (req, res) => {
-  const categories = await prisma.category.findMany({
-    orderBy: categoryOrder,
-    include: {
-      items: {
-        orderBy: itemOrder,
-        include: itemInclude,
-      },
-    },
-  });
+  const [categories, items] = await Promise.all([
+    prisma.category.findMany({ orderBy: categoryOrder }),
+    prisma.menuItem.findMany({
+      orderBy: itemOrder,
+      include: itemInclude,
+      relationLoadStrategy: "join",
+    }),
+  ]);
 
   res.json({
     categories: categories.map((category) => toCategory(category)),
-    items: categories.flatMap((category) =>
-      category.items.map((item) => toMenuItem(item)),
-    ),
+    items: items.map((item) => toMenuItem(item)),
   });
 });
 
@@ -335,47 +361,19 @@ export const deleteItem = asyncHandler(async (req, res) => {
 
 export const createItemOption = asyncHandler(async (req, res) => {
   const option = await prisma.menuItemOption.create({
-    data: {
-      menuItemId: req.params.itemId,
-      name: parseRequiredName(req.body.name),
-      priceDelta: parsePriceDelta(req.body.priceDelta ?? 0),
-      sortOrder: parseSortOrder(req.body.sortOrder),
-      isAvailable: req.body.isAvailable ?? true,
-    },
+    data: modifierCreateData(req.body, req.params.itemId),
   });
 
-  res.status(201).json({ option: toMenuItemOption(option) });
+  res.status(201).json({ option: toMenuItemModifier(option) });
 });
 
 export const updateItemOption = asyncHandler(async (req, res) => {
-  const data = {};
-
-  if (req.body.name !== undefined) {
-    data.name = parseRequiredName(req.body.name);
-  }
-
-  if (req.body.priceDelta !== undefined) {
-    data.priceDelta = parsePriceDelta(req.body.priceDelta);
-  }
-
-  if (req.body.sortOrder !== undefined) {
-    data.sortOrder = parseSortOrder(req.body.sortOrder);
-  }
-
-  if (req.body.isAvailable !== undefined) {
-    data.isAvailable = Boolean(req.body.isAvailable);
-  }
-
-  if (Object.keys(data).length === 0) {
-    throw appError("No valid fields to update");
-  }
-
   const option = await prisma.menuItemOption.update({
     where: { id: req.params.id },
-    data,
+    data: modifierUpdateData(req.body),
   });
 
-  res.json({ option: toMenuItemOption(option) });
+  res.json({ option: toMenuItemModifier(option) });
 });
 
 export const deleteItemOption = asyncHandler(async (req, res) => {
@@ -385,47 +383,19 @@ export const deleteItemOption = asyncHandler(async (req, res) => {
 
 export const createItemSize = asyncHandler(async (req, res) => {
   const size = await prisma.menuItemSize.create({
-    data: {
-      menuItemId: req.params.itemId,
-      name: parseRequiredName(req.body.name),
-      priceDelta: parsePriceDelta(req.body.priceDelta ?? 0),
-      sortOrder: parseSortOrder(req.body.sortOrder),
-      isAvailable: req.body.isAvailable ?? true,
-    },
+    data: modifierCreateData(req.body, req.params.itemId),
   });
 
-  res.status(201).json({ size: toMenuItemSize(size) });
+  res.status(201).json({ size: toMenuItemModifier(size) });
 });
 
 export const updateItemSize = asyncHandler(async (req, res) => {
-  const data = {};
-
-  if (req.body.name !== undefined) {
-    data.name = parseRequiredName(req.body.name);
-  }
-
-  if (req.body.priceDelta !== undefined) {
-    data.priceDelta = parsePriceDelta(req.body.priceDelta);
-  }
-
-  if (req.body.sortOrder !== undefined) {
-    data.sortOrder = parseSortOrder(req.body.sortOrder);
-  }
-
-  if (req.body.isAvailable !== undefined) {
-    data.isAvailable = Boolean(req.body.isAvailable);
-  }
-
-  if (Object.keys(data).length === 0) {
-    throw appError("No valid fields to update");
-  }
-
   const size = await prisma.menuItemSize.update({
     where: { id: req.params.id },
-    data,
+    data: modifierUpdateData(req.body),
   });
 
-  res.json({ size: toMenuItemSize(size) });
+  res.json({ size: toMenuItemModifier(size) });
 });
 
 export const deleteItemSize = asyncHandler(async (req, res) => {

@@ -1,15 +1,29 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { getNextTicketNumber } from "../lib/shift.js";
+import { getBusinessDate, getNextTicketNumberForShift } from "../lib/shift.js";
 import { emitOrderEvent } from "../lib/socket.js";
 
-const orderInclude = {
+const userSelect = { id: true, email: true, role: true };
+
+const orderItemsInclude = {
   items: { include: { options: true } },
-  placedBy: { select: { id: true, email: true, role: true } },
-  cancelledBy: { select: { id: true, email: true, role: true } },
-  finishedBy: { select: { id: true, email: true, role: true } },
-  completedBy: { select: { id: true, email: true, role: true } },
 };
+
+const orderActiveInclude = {
+  ...orderItemsInclude,
+  placedBy: { select: userSelect },
+};
+
+const orderKitchenInclude = orderActiveInclude;
+
+const orderCashierInclude = {
+  ...orderActiveInclude,
+  finishedBy: { select: userSelect },
+};
+
+function toUserSummary(user) {
+  return { id: user.id, email: user.email, role: user.role };
+}
 
 function toOrder(order) {
   return {
@@ -45,6 +59,13 @@ function toOrder(order) {
   };
 }
 
+function withActor(order, actorField, user) {
+  return {
+    ...order,
+    [actorField]: toUserSummary(user),
+  };
+}
+
 async function logTransition(tx, orderId, fromStatus, toStatus, userId) {
   await tx.orderStatusLog.create({
     data: {
@@ -56,16 +77,23 @@ async function logTransition(tx, orderId, fromStatus, toStatus, userId) {
   });
 }
 
-async function transitionOrder(orderId, user, updateFn, eventType) {
+async function transitionOrder(orderId, user, updateFn, eventType, actorField) {
   const order = await prisma.$transaction(async (tx) => {
-    const current = await tx.order.findUnique({ where: { id: orderId } });
+    const current = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, status: true, businessDate: true },
+    });
     if (!current) {
+      throw appError("Order not found", 404);
+    }
+
+    if (current.businessDate !== getBusinessDate()) {
       throw appError("Order not found", 404);
     }
 
     const updated = await updateFn(tx, current);
     await logTransition(tx, orderId, current.status, updated.status, user.id);
-    return updated;
+    return actorField ? withActor(updated, actorField, user) : updated;
   });
 
   const payload = toOrder(order);
@@ -115,12 +143,18 @@ export async function createOrder(user, { items }) {
       id: { in: menuItemIds },
       isAvailable: true,
     },
-    include: {
+    select: {
+      id: true,
+      itemNumber: true,
+      name: true,
+      price: true,
       options: {
         where: { isAvailable: true },
+        select: { id: true, name: true, priceDelta: true },
       },
       sizes: {
         where: { isAvailable: true },
+        select: { id: true, name: true, priceDelta: true },
       },
     },
   });
@@ -176,20 +210,24 @@ export async function createOrder(user, { items }) {
     });
   }
 
+  const businessDate = getBusinessDate();
+
   const order = await prisma.$transaction(async (tx) => {
-    const ticketNumber = await getNextTicketNumber(tx);
+    const ticketNumber = await getNextTicketNumberForShift(tx, businessDate);
     const created = await tx.order.create({
       data: {
         ticketNumber,
+        businessDate,
         status: "PENDING",
         placedById: user.id,
         items: { create: lineItems },
       },
-      include: orderInclude,
+      include: orderItemsInclude,
+      relationLoadStrategy: "join",
     });
 
     await logTransition(tx, created.id, null, "PENDING", user.id);
-    return created;
+    return withActor(created, "placedBy", user);
   });
 
   const payload = toOrder(order);
@@ -198,16 +236,27 @@ export async function createOrder(user, { items }) {
   return payload;
 }
 
-export async function getActiveOrders({ status } = {}) {
-  const where = status ? { status } : { status: { not: "COMPLETED" } };
+function currentShiftWhere(extra = {}) {
+  return {
+    businessDate: getBusinessDate(),
+    ...extra,
+  };
+}
 
+async function listShiftOrders(statusFilter, include) {
   const orders = await prisma.order.findMany({
-    where,
-    include: orderInclude,
-    orderBy: { createdAt: "asc" },
+    relationLoadStrategy: "join",
+    where: currentShiftWhere(statusFilter),
+    include,
+    orderBy: [{ ticketNumber: "asc" }, { createdAt: "asc" }],
   });
 
   return orders.map(toOrder);
+}
+
+export async function getActiveOrders({ status } = {}) {
+  const statusFilter = status ? { status } : { status: { not: "COMPLETED" } };
+  return listShiftOrders(statusFilter, orderActiveInclude);
 }
 
 export async function getKitchenFeed({ includeVoided = false } = {}) {
@@ -215,13 +264,7 @@ export async function getKitchenFeed({ includeVoided = false } = {}) {
     ? ["PENDING", "IN_PROGRESS", "FINISHED", "CANCELLED"]
     : ["PENDING", "IN_PROGRESS", "FINISHED"];
 
-  const orders = await prisma.order.findMany({
-    where: { status: { in: statuses } },
-    include: orderInclude,
-    orderBy: { createdAt: "asc" },
-  });
-
-  return orders.map(toOrder);
+  return listShiftOrders({ status: { in: statuses } }, orderKitchenInclude);
 }
 
 export async function getCashierFeed({ includeInProgress = false } = {}) {
@@ -229,13 +272,16 @@ export async function getCashierFeed({ includeInProgress = false } = {}) {
     ? ["IN_PROGRESS", "FINISHED"]
     : ["FINISHED"];
 
-  const orders = await prisma.order.findMany({
-    where: { status: { in: statuses } },
-    include: orderInclude,
-    orderBy: { createdAt: "asc" },
-  });
+  return listShiftOrders({ status: { in: statuses } }, orderCashierInclude);
+}
 
-  return orders.map(toOrder);
+async function updateOrderStatus(tx, orderId, data, include) {
+  return tx.order.update({
+    where: { id: orderId },
+    data,
+    include,
+    relationLoadStrategy: "join",
+  });
 }
 
 export async function startOrder(orderId, user) {
@@ -247,13 +293,15 @@ export async function startOrder(orderId, user) {
         throw appError(`Cannot start order in ${order.status} status`);
       }
 
-      return tx.order.update({
-        where: { id: order.id },
-        data: { status: "IN_PROGRESS" },
-        include: orderInclude,
-      });
+      return updateOrderStatus(
+        tx,
+        order.id,
+        { status: "IN_PROGRESS" },
+        orderKitchenInclude,
+      );
     },
-    "order:updated"
+    "order:updated",
+    null,
   );
 }
 
@@ -266,17 +314,19 @@ export async function finishOrder(orderId, user) {
         throw appError(`Cannot finish order in ${order.status} status`);
       }
 
-      return tx.order.update({
-        where: { id: order.id },
-        data: {
+      return updateOrderStatus(
+        tx,
+        order.id,
+        {
           status: "FINISHED",
           finishedAt: new Date(),
           finishedById: user.id,
         },
-        include: orderInclude,
-      });
+        orderCashierInclude,
+      );
     },
-    "order:updated"
+    "order:updated",
+    "finishedBy",
   );
 }
 
@@ -289,17 +339,19 @@ export async function completeOrder(orderId, user) {
         throw appError(`Cannot complete order in ${order.status} status`);
       }
 
-      return tx.order.update({
-        where: { id: order.id },
-        data: {
+      return updateOrderStatus(
+        tx,
+        order.id,
+        {
           status: "COMPLETED",
           completedAt: new Date(),
           completedById: user.id,
         },
-        include: orderInclude,
-      });
+        orderCashierInclude,
+      );
     },
-    "order:completed"
+    "order:completed",
+    "completedBy",
   );
 }
 
@@ -320,18 +372,20 @@ export async function cancelOrder(orderId, user, { reason } = {}) {
         throw appError("Kitchen can only cancel PENDING or IN_PROGRESS orders");
       }
 
-      return tx.order.update({
-        where: { id: order.id },
-        data: {
+      return updateOrderStatus(
+        tx,
+        order.id,
+        {
           status: "CANCELLED",
           previousStatus: order.status,
           cancelReason: reason?.trim() || null,
           cancelledAt: new Date(),
           cancelledById: user.id,
         },
-        include: orderInclude,
-      });
+        orderKitchenInclude,
+      );
     },
-    "order:cancelled"
+    "order:cancelled",
+    "cancelledBy",
   );
 }

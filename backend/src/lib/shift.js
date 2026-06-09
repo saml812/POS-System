@@ -1,7 +1,5 @@
 import { getEffectiveTicketResetConfig } from "./ticketResetConfig.js";
 
-export const TICKET_KEY_PREFIX = "ticket:";
-
 function subtractCalendarDay(ymd) {
   const [year, month, day] = ymd.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -50,28 +48,21 @@ export function getBusinessDateForConfig(
   return calendarDate;
 }
 
-export function getTicketCounterKey(businessDate) {
-  return `${TICKET_KEY_PREFIX}${businessDate}`;
-}
-
 export function getBusinessDate(now = new Date()) {
   const { timeZone, resetHour } = getEffectiveTicketResetConfig();
   return getBusinessDateForConfig(now, { timeZone, resetHour });
 }
 
-export async function incrementTicketCounter(tx, businessDate) {
-  const key = getTicketCounterKey(businessDate);
-  const rows = await tx.$queryRaw`
-    INSERT INTO "AppSetting" (key, value)
-    VALUES (${key}, '1')
-    ON CONFLICT (key) DO UPDATE
-    SET value = (CAST("AppSetting".value AS INTEGER) + 1)::TEXT
-    RETURNING value
+export async function getNextTicketNumberForShift(tx, businessDate) {
+  await tx.$executeRaw`
+    SELECT pg_advisory_xact_lock(hashtext(${`shift:${businessDate}`}))
   `;
 
-  return Number(rows[0].value);
-}
+  const rows = await tx.$queryRaw`
+    SELECT COALESCE(MAX("ticketNumber"), 0) + 1 AS next
+    FROM "Order"
+    WHERE "businessDate" = ${businessDate}
+  `;
 
-export async function getNextTicketNumber(tx) {
-  return incrementTicketCounter(tx, getBusinessDate());
+  return Number(rows[0].next);
 }

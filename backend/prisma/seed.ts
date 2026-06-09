@@ -17,19 +17,30 @@ const demoUsers = [
   { email: "manager@demo.com", role: "MANAGER" as const },
 ];
 
-type SeedOption = {
+type SeedModifier = {
   id: string;
   name: string;
   priceDelta: number;
   sortOrder: number;
 };
 
-type SeedSize = {
-  id: string;
-  name: string;
-  priceDelta: number;
-  sortOrder: number;
-};
+function modifierUpsertArgs(modifier: SeedModifier, menuItemId: string) {
+  return {
+    update: {
+      name: modifier.name,
+      priceDelta: modifier.priceDelta,
+      sortOrder: modifier.sortOrder,
+      menuItemId,
+    },
+    create: {
+      id: modifier.id,
+      name: modifier.name,
+      priceDelta: modifier.priceDelta,
+      sortOrder: modifier.sortOrder,
+      menuItemId,
+    },
+  };
+}
 
 type SeedItem = {
   id: string;
@@ -38,8 +49,8 @@ type SeedItem = {
   description: string;
   price: number;
   sortOrder: number;
-  options?: SeedOption[];
-  sizes?: SeedSize[];
+  options?: SeedModifier[];
+  sizes?: SeedModifier[];
 };
 
 type SeedCategory = {
@@ -226,8 +237,21 @@ const demoMenu: SeedCategory[] = [
   },
 ];
 
+const defaultAppSettings = [
+  { key: "ticket_reset.timezone", value: "local" },
+  { key: "ticket_reset.hour", value: "0" },
+];
+
 async function main() {
   const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 12);
+
+  for (const setting of defaultAppSettings) {
+    await prisma.appSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
+    });
+  }
 
   for (const { email, role } of demoUsers) {
     await prisma.user.upsert({
@@ -285,38 +309,14 @@ async function main() {
       for (const option of item.options ?? []) {
         await prisma.menuItemOption.upsert({
           where: { id: option.id },
-          update: {
-            name: option.name,
-            priceDelta: option.priceDelta,
-            sortOrder: option.sortOrder,
-            menuItemId: item.id,
-          },
-          create: {
-            id: option.id,
-            name: option.name,
-            priceDelta: option.priceDelta,
-            sortOrder: option.sortOrder,
-            menuItemId: item.id,
-          },
+          ...modifierUpsertArgs(option, item.id),
         });
       }
 
       for (const size of item.sizes ?? []) {
         await prisma.menuItemSize.upsert({
           where: { id: size.id },
-          update: {
-            name: size.name,
-            priceDelta: size.priceDelta,
-            sortOrder: size.sortOrder,
-            menuItemId: item.id,
-          },
-          create: {
-            id: size.id,
-            name: size.name,
-            priceDelta: size.priceDelta,
-            sortOrder: size.sortOrder,
-            menuItemId: item.id,
-          },
+          ...modifierUpsertArgs(size, item.id),
         });
       }
     }

@@ -12,7 +12,3 @@ export const updateTicketReset = asyncHandler(async (req, res) => {
   res.json({ settings });
 });
 
-export const resetTicketReset = asyncHandler(async (req, res) => {
-  const settings = await settingsService.resetTicketResetToEnvDefaults();
-  res.json({ settings });
-});

@@ -1,9 +1,9 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { getBusinessDate, getTicketCounterKey } from "../lib/shift.js";
+import { getShiftStatus } from "../lib/shiftStatus.js";
 import {
   getEffectiveTicketResetConfig,
-  refreshTicketResetConfig,
+  patchTicketResetCache,
   TICKET_RESET_KEYS,
   toPublicTicketResetSettings,
 } from "../lib/ticketResetConfig.js";
@@ -21,10 +21,6 @@ function parseField(parser, value) {
 }
 
 function ticketResetMutation(key, value) {
-  if (value === null) {
-    return prisma.appSetting.deleteMany({ where: { key } });
-  }
-
   return prisma.appSetting.upsert({
     where: { key },
     create: { key, value },
@@ -32,21 +28,9 @@ function ticketResetMutation(key, value) {
   });
 }
 
-async function getTicketStatus() {
-  const businessDate = getBusinessDate();
-  const counter = await prisma.appSetting.findUnique({
-    where: { key: getTicketCounterKey(businessDate) },
-  });
-
-  return {
-    businessDate,
-    lastTicketNumber: counter ? Number(counter.value) : 0,
-  };
-}
-
 export async function getSettings() {
   const config = getEffectiveTicketResetConfig();
-  const ticketStatus = await getTicketStatus();
+  const ticketStatus = await getShiftStatus();
 
   return {
     ...toPublicTicketResetSettings(config),
@@ -60,35 +44,23 @@ export async function updateTicketReset({ timezone, resetHour }) {
   }
 
   const updates = [];
+  const cachePatch = {};
 
   if (timezone !== undefined) {
-    const value =
-      timezone === null
-        ? null
-        : parseField(parseTicketResetTimezone, timezone) ?? "local";
+    const value = parseField(parseTicketResetTimezone, timezone) ?? "local";
     updates.push(ticketResetMutation(TICKET_RESET_KEYS.timezone, value));
+    cachePatch.timezone = value;
   }
 
   if (resetHour !== undefined) {
-    const value =
-      resetHour === null
-        ? null
-        : String(parseField(parseTicketResetHour, resetHour));
+    const value = String(parseField(parseTicketResetHour, resetHour));
     updates.push(ticketResetMutation(TICKET_RESET_KEYS.hour, value));
+    cachePatch.resetHour = Number(value);
   }
 
   await prisma.$transaction(updates);
-  await refreshTicketResetConfig();
+  patchTicketResetCache(cachePatch);
 
   return getSettings();
 }
 
-export async function resetTicketResetToEnvDefaults() {
-  await prisma.appSetting.deleteMany({
-    where: {
-      key: { in: [TICKET_RESET_KEYS.timezone, TICKET_RESET_KEYS.hour] },
-    },
-  });
-  await refreshTicketResetConfig();
-  return getSettings();
-}

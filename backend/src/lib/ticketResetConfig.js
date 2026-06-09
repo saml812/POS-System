@@ -1,55 +1,73 @@
 import { prisma } from "./db.js";
-import { ENV } from "./env.js";
 
 export const TICKET_RESET_KEYS = {
   timezone: "ticket_reset.timezone",
   hour: "ticket_reset.hour",
 };
 
-let cachedConfig = null;
+const TICKET_RESET_KEY_LIST = [
+  TICKET_RESET_KEYS.timezone,
+  TICKET_RESET_KEYS.hour,
+];
 
-export function getEnvTicketResetDefaults() {
-  return {
-    timeZone: ENV.TICKET_RESET_TIMEZONE,
-    resetHour: ENV.TICKET_RESET_HOUR,
-  };
-}
+const DEFAULT_DB_VALUES = {
+  [TICKET_RESET_KEYS.timezone]: "local",
+  [TICKET_RESET_KEYS.hour]: "0",
+};
+
+let cachedConfig = null;
 
 function buildConfigFromRows(rows) {
   const byKey = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  const envDefaults = getEnvTicketResetDefaults();
-
-  let timeZone = envDefaults.timeZone;
-  let resetHour = envDefaults.resetHour;
-  const sources = { timezone: "env", hour: "env" };
-
-  if (TICKET_RESET_KEYS.timezone in byKey) {
-    const stored = byKey[TICKET_RESET_KEYS.timezone];
-    timeZone = stored.toLowerCase() === "local" ? undefined : stored;
-    sources.timezone = "db";
-  }
-
-  if (TICKET_RESET_KEYS.hour in byKey) {
-    resetHour = Number(byKey[TICKET_RESET_KEYS.hour]);
-    sources.hour = "db";
-  }
+  const storedTimezone =
+    byKey[TICKET_RESET_KEYS.timezone] ?? DEFAULT_DB_VALUES[TICKET_RESET_KEYS.timezone];
+  const storedHour =
+    byKey[TICKET_RESET_KEYS.hour] ?? DEFAULT_DB_VALUES[TICKET_RESET_KEYS.hour];
 
   return {
-    timeZone,
-    resetHour,
-    sources,
-    envDefaults,
+    timeZone:
+      storedTimezone.toLowerCase() === "local" ? undefined : storedTimezone,
+    resetHour: Number(storedHour),
   };
 }
 
-export async function refreshTicketResetConfig() {
-  const rows = await prisma.appSetting.findMany({
-    where: {
-      key: { in: [TICKET_RESET_KEYS.timezone, TICKET_RESET_KEYS.hour] },
-    },
+async function loadTicketResetRows() {
+  let rows = await prisma.appSetting.findMany({
+    where: { key: { in: TICKET_RESET_KEY_LIST } },
   });
 
+  const existingKeys = new Set(rows.map((row) => row.key));
+  const toCreate = Object.entries(DEFAULT_DB_VALUES)
+    .filter(([key]) => !existingKeys.has(key))
+    .map(([key, value]) => ({ key, value }));
+
+  if (toCreate.length > 0) {
+    await prisma.appSetting.createMany({ data: toCreate });
+    rows = [...rows, ...toCreate];
+  }
+
+  return rows;
+}
+
+export async function refreshTicketResetConfig() {
+  const rows = await loadTicketResetRows();
   cachedConfig = buildConfigFromRows(rows);
+  return cachedConfig;
+}
+
+export function patchTicketResetCache({ timezone, resetHour }) {
+  const current = getEffectiveTicketResetConfig();
+
+  cachedConfig = {
+    timeZone:
+      timezone !== undefined
+        ? timezone.toLowerCase() === "local"
+          ? undefined
+          : timezone
+        : current.timeZone,
+    resetHour: resetHour !== undefined ? Number(resetHour) : current.resetHour,
+  };
+
   return cachedConfig;
 }
 
@@ -62,12 +80,6 @@ export function toPublicTicketResetSettings(config) {
     ticketReset: {
       timezone: config.timeZone ?? null,
       resetHour: config.resetHour,
-      timezoneSource: config.sources.timezone,
-      resetHourSource: config.sources.hour,
-    },
-    envDefaults: {
-      timezone: config.envDefaults.timeZone ?? null,
-      resetHour: config.envDefaults.resetHour,
     },
   };
 }
