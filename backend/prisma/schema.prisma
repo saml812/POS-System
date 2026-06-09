@@ -66,6 +66,7 @@ model MenuItem {
   categoryId  String
   category    Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   options     MenuItemOption[]
+  sizes       MenuItemSize[]
   orderItems  OrderItem[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -74,6 +75,20 @@ model MenuItem {
 }
 
 model MenuItemOption {
+  id          String   @id @default(cuid())
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name        String
+  priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
+  sortOrder   Int      @default(0)
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([menuItemId, isAvailable, sortOrder])
+}
+
+model MenuItemSize {
   id          String   @id @default(cuid())
   menuItemId  String
   menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
@@ -126,6 +141,7 @@ model OrderItem {
   menuItem   MenuItem          @relation(fields: [menuItemId], references: [id])
   itemCode   String?
   name       String
+  sizeName   String?
   price      Decimal           @db.Decimal(10, 2)
   quantity    Int               @default(1)
   preferences String?

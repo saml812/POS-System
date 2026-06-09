@@ -1,9 +1,7 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { parseLocale } from "../lib/menuLocale.js";
 import { getNextTicketNumber } from "../lib/shift.js";
 import { emitOrderEvent } from "../lib/socket.js";
-import { translateTexts } from "../lib/translate.js";
 
 const orderInclude = {
   items: { include: { options: true } },
@@ -32,6 +30,7 @@ function toOrder(order) {
       menuItemId: item.menuItemId,
       itemCode: item.itemCode ?? null,
       name: item.name,
+      sizeName: item.sizeName ?? null,
       price: Number(item.price),
       quantity: item.quantity,
       preferences: item.preferences ?? null,
@@ -78,12 +77,10 @@ async function transitionOrder(orderId, user, updateFn, eventType) {
   return payload;
 }
 
-export async function createOrder(user, { items, locale: localeInput }) {
+export async function createOrder(user, { items }) {
   if (!Array.isArray(items) || items.length === 0) {
     throw appError("At least one item is required");
   }
-
-  const locale = parseLocale(localeInput);
 
   const parsedEntries = items.map((entry) => {
     const menuItemId = entry.menuItemId?.trim();
@@ -101,12 +98,15 @@ export async function createOrder(user, { items, locale: localeInput }) {
       ? [...new Set(entry.optionIds.map((id) => String(id).trim()).filter(Boolean))]
       : [];
 
+    const sizeId =
+      typeof entry.sizeId === "string" ? entry.sizeId.trim() || null : null;
+
     const preferences =
       typeof entry.preferences === "string"
         ? entry.preferences.trim() || null
         : null;
 
-    return { menuItemId, quantity, optionIds, preferences };
+    return { menuItemId, quantity, optionIds, sizeId, preferences };
   });
 
   const menuItemIds = [...new Set(parsedEntries.map((entry) => entry.menuItemId))];
@@ -119,22 +119,12 @@ export async function createOrder(user, { items, locale: localeInput }) {
       options: {
         where: { isAvailable: true },
       },
+      sizes: {
+        where: { isAvailable: true },
+      },
     },
   });
   const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
-
-  let nameTranslations = new Map();
-  if (locale === "zh") {
-    const texts = [];
-    for (const item of menuItems) {
-      texts.push(item.name);
-      for (const option of item.options) {
-        texts.push(option.name);
-      }
-    }
-    nameTranslations = await translateTexts(texts);
-  }
-  const localizeName = (name) => nameTranslations.get(name?.trim()) ?? name;
 
   const lineItems = [];
   for (const entry of parsedEntries) {
@@ -152,22 +142,34 @@ export async function createOrder(user, { items, locale: localeInput }) {
       selectedOptions.push(option);
     }
 
+    let selectedSize = null;
+    if (entry.sizeId) {
+      selectedSize = menuItem.sizes.find((row) => row.id === entry.sizeId);
+      if (!selectedSize) {
+        throw appError(`Invalid size for ${menuItem.name}: ${entry.sizeId}`);
+      }
+    } else if (menuItem.sizes.length > 0) {
+      throw appError(`A size is required for ${menuItem.name}`);
+    }
+
     const optionTotal = selectedOptions.reduce(
       (sum, option) => sum + Number(option.priceDelta),
       0,
     );
-    const unitPrice = Number(menuItem.price) + optionTotal;
+    const sizeTotal = selectedSize ? Number(selectedSize.priceDelta) : 0;
+    const unitPrice = Number(menuItem.price) + optionTotal + sizeTotal;
 
     lineItems.push({
       menuItemId: menuItem.id,
       itemCode: menuItem.itemNumber ?? null,
-      name: localizeName(menuItem.name),
+      name: menuItem.name,
+      sizeName: selectedSize ? selectedSize.name : null,
       price: unitPrice,
       quantity: entry.quantity,
       preferences: entry.preferences,
       options: {
         create: selectedOptions.map((option) => ({
-          name: localizeName(option.name),
+          name: option.name,
           priceDelta: option.priceDelta,
         })),
       },

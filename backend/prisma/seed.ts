@@ -24,6 +24,13 @@ type SeedOption = {
   sortOrder: number;
 };
 
+type SeedSize = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  sortOrder: number;
+};
+
 type SeedItem = {
   id: string;
   itemNumber: string | null;
@@ -32,6 +39,7 @@ type SeedItem = {
   price: number;
   sortOrder: number;
   options?: SeedOption[];
+  sizes?: SeedSize[];
 };
 
 type SeedCategory = {
@@ -178,9 +186,14 @@ const demoMenu: SeedCategory[] = [
         id: "soft-drink",
         itemNumber: "11",
         name: "Soft Drink",
-        description: "330ml can",
+        description: "Fountain soda",
         price: 2.99,
         sortOrder: 0,
+        sizes: [
+          { id: "soft-drink-small", name: "Small", priceDelta: 0, sortOrder: 0 },
+          { id: "soft-drink-regular", name: "Regular", priceDelta: 0, sortOrder: 1 },
+          { id: "soft-drink-large", name: "Large", priceDelta: 1, sortOrder: 2 },
+        ],
       },
       {
         id: "house-coffee",
@@ -189,6 +202,10 @@ const demoMenu: SeedCategory[] = [
         description: "Freshly brewed",
         price: 3.49,
         sortOrder: 1,
+        sizes: [
+          { id: "house-coffee-small", name: "Small", priceDelta: 0, sortOrder: 0 },
+          { id: "house-coffee-large", name: "Large", priceDelta: 0.8, sortOrder: 1 },
+        ],
       },
     ],
   },
@@ -279,6 +296,25 @@ async function main() {
             name: option.name,
             priceDelta: option.priceDelta,
             sortOrder: option.sortOrder,
+            menuItemId: item.id,
+          },
+        });
+      }
+
+      for (const size of item.sizes ?? []) {
+        await prisma.menuItemSize.upsert({
+          where: { id: size.id },
+          update: {
+            name: size.name,
+            priceDelta: size.priceDelta,
+            sortOrder: size.sortOrder,
+            menuItemId: item.id,
+          },
+          create: {
+            id: size.id,
+            name: size.name,
+            priceDelta: size.priceDelta,
+            sortOrder: size.sortOrder,
             menuItemId: item.id,
           },
         });

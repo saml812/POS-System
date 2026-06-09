@@ -1,21 +1,13 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { parseLocale, parseOptionalText } from "../lib/menuLocale.js";
-import { translateTexts } from "../lib/translate.js";
+import { parseOptionalText } from "../lib/menuLocale.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-function localize(text, translations) {
-  if (!text || !translations) {
-    return text ?? null;
-  }
-  return translations.get(text.trim()) ?? text;
-}
-
-function toCategory(category, translations = null) {
+function toCategory(category) {
   const { id, name, sortOrder, isActive, createdAt, updatedAt } = category;
   return {
     id,
-    name: localize(name, translations),
+    name,
     sortOrder,
     isActive,
     createdAt,
@@ -23,13 +15,13 @@ function toCategory(category, translations = null) {
   };
 }
 
-function toMenuItemOption(option, translations = null) {
+function toMenuItemOption(option) {
   const { id, menuItemId, name, priceDelta, sortOrder, isAvailable, createdAt, updatedAt } =
     option;
   return {
     id,
     menuItemId,
-    name: localize(name, translations),
+    name,
     priceDelta: Number(priceDelta),
     sortOrder,
     isAvailable,
@@ -38,7 +30,22 @@ function toMenuItemOption(option, translations = null) {
   };
 }
 
-function toMenuItem(item, translations = null) {
+function toMenuItemSize(size) {
+  const { id, menuItemId, name, priceDelta, sortOrder, isAvailable, createdAt, updatedAt } =
+    size;
+  return {
+    id,
+    menuItemId,
+    name,
+    priceDelta: Number(priceDelta),
+    sortOrder,
+    isAvailable,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function toMenuItem(item) {
   const {
     id,
     itemNumber,
@@ -51,12 +58,13 @@ function toMenuItem(item, translations = null) {
     createdAt,
     updatedAt,
     options,
+    sizes,
   } = item;
   const result = {
     id,
     itemNumber: itemNumber ?? null,
-    name: localize(name, translations),
-    description: localize(description, translations),
+    name,
+    description: description ?? null,
     price: Number(price),
     sortOrder,
     isAvailable,
@@ -66,9 +74,11 @@ function toMenuItem(item, translations = null) {
   };
 
   if (options) {
-    result.options = options.map((option) =>
-      toMenuItemOption(option, translations),
-    );
+    result.options = options.map(toMenuItemOption);
+  }
+
+  if (sizes) {
+    result.sizes = sizes.map(toMenuItemSize);
   }
 
   return result;
@@ -94,6 +104,15 @@ function parsePrice(value) {
   }
 
   return Math.round(price * 100) / 100;
+}
+
+function parsePriceDelta(value) {
+  const delta = Number(value);
+  if (Number.isNaN(delta) || delta < 0) {
+    throw appError("priceDelta must be a non-negative number");
+  }
+
+  return Math.round(delta * 100) / 100;
 }
 
 function parseRequiredName(name) {
@@ -134,9 +153,13 @@ function parseItemNumber(value) {
 const categoryOrder = [{ sortOrder: "asc" }, { name: "asc" }];
 const itemOrder = [{ sortOrder: "asc" }, { name: "asc" }];
 const optionOrder = [{ sortOrder: "asc" }, { name: "asc" }];
+const sizeOrder = [{ sortOrder: "asc" }, { name: "asc" }];
 const itemInclude = {
   options: {
     orderBy: optionOrder,
+  },
+  sizes: {
+    orderBy: sizeOrder,
   },
 };
 
@@ -145,28 +168,13 @@ const publicItemInclude = {
     where: { isAvailable: true },
     orderBy: optionOrder,
   },
+  sizes: {
+    where: { isAvailable: true },
+    orderBy: sizeOrder,
+  },
 };
 
-async function buildMenuTranslations(categories) {
-  const texts = [];
-  for (const category of categories) {
-    texts.push(category.name);
-    for (const item of category.items ?? []) {
-      texts.push(item.name);
-      if (item.description) {
-        texts.push(item.description);
-      }
-      for (const option of item.options ?? []) {
-        texts.push(option.name);
-      }
-    }
-  }
-
-  return translateTexts(texts);
-}
-
 export const getMenu = asyncHandler(async (req, res) => {
-  const locale = parseLocale(req.query.locale);
   const categories = await prisma.category.findMany({
     where: { isActive: true },
     orderBy: categoryOrder,
@@ -179,20 +187,10 @@ export const getMenu = asyncHandler(async (req, res) => {
     },
   });
 
-  let translations = null;
-  if (locale === "zh") {
-    try {
-      translations = await buildMenuTranslations(categories);
-    } catch (translationError) {
-      console.error("Menu translation failed:", translationError);
-      translations = null;
-    }
-  }
-
   res.json({
     categories: categories.map((category) => ({
-      ...toCategory(category, translations),
-      items: category.items.map((item) => toMenuItem(item, translations)),
+      ...toCategory(category),
+      items: category.items.map(toMenuItem),
     })),
   });
 });
@@ -340,7 +338,7 @@ export const createItemOption = asyncHandler(async (req, res) => {
     data: {
       menuItemId: req.params.itemId,
       name: parseRequiredName(req.body.name),
-      priceDelta: parsePrice(req.body.priceDelta ?? 0),
+      priceDelta: parsePriceDelta(req.body.priceDelta ?? 0),
       sortOrder: parseSortOrder(req.body.sortOrder),
       isAvailable: req.body.isAvailable ?? true,
     },
@@ -357,7 +355,7 @@ export const updateItemOption = asyncHandler(async (req, res) => {
   }
 
   if (req.body.priceDelta !== undefined) {
-    data.priceDelta = parsePrice(req.body.priceDelta);
+    data.priceDelta = parsePriceDelta(req.body.priceDelta);
   }
 
   if (req.body.sortOrder !== undefined) {
@@ -383,4 +381,54 @@ export const updateItemOption = asyncHandler(async (req, res) => {
 export const deleteItemOption = asyncHandler(async (req, res) => {
   await prisma.menuItemOption.delete({ where: { id: req.params.id } });
   res.json({ message: "Option deleted successfully" });
+});
+
+export const createItemSize = asyncHandler(async (req, res) => {
+  const size = await prisma.menuItemSize.create({
+    data: {
+      menuItemId: req.params.itemId,
+      name: parseRequiredName(req.body.name),
+      priceDelta: parsePriceDelta(req.body.priceDelta ?? 0),
+      sortOrder: parseSortOrder(req.body.sortOrder),
+      isAvailable: req.body.isAvailable ?? true,
+    },
+  });
+
+  res.status(201).json({ size: toMenuItemSize(size) });
+});
+
+export const updateItemSize = asyncHandler(async (req, res) => {
+  const data = {};
+
+  if (req.body.name !== undefined) {
+    data.name = parseRequiredName(req.body.name);
+  }
+
+  if (req.body.priceDelta !== undefined) {
+    data.priceDelta = parsePriceDelta(req.body.priceDelta);
+  }
+
+  if (req.body.sortOrder !== undefined) {
+    data.sortOrder = parseSortOrder(req.body.sortOrder);
+  }
+
+  if (req.body.isAvailable !== undefined) {
+    data.isAvailable = Boolean(req.body.isAvailable);
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw appError("No valid fields to update");
+  }
+
+  const size = await prisma.menuItemSize.update({
+    where: { id: req.params.id },
+    data,
+  });
+
+  res.json({ size: toMenuItemSize(size) });
+});
+
+export const deleteItemSize = asyncHandler(async (req, res) => {
+  await prisma.menuItemSize.delete({ where: { id: req.params.id } });
+  res.json({ message: "Size deleted successfully" });
 });

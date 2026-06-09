@@ -11,6 +11,9 @@ import {
   createItemOption,
   updateItemOption,
   deleteItemOption,
+  createItemSize,
+  updateItemSize,
+  deleteItemSize,
 } from "../controllers/menu.controller.js";
 import { requireAuth, allowRoles } from "../middleware/auth.middleware.js";
 
@@ -32,5 +35,9 @@ router.delete("/items/:id", managerOnly, deleteItem);
 router.post("/items/:itemId/options", managerOnly, createItemOption);
 router.patch("/options/:id", managerOnly, updateItemOption);
 router.delete("/options/:id", managerOnly, deleteItemOption);
+
+router.post("/items/:itemId/sizes", managerOnly, createItemSize);
+router.patch("/sizes/:id", managerOnly, updateItemSize);
+router.delete("/sizes/:id", managerOnly, deleteItemSize);
 
 export default router;
