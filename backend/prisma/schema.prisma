@@ -127,6 +127,7 @@ model Order {
   updatedAt      DateTime         @updatedAt
 
   @@unique([businessDate, ticketNumber])
+  @@index([businessDate], map: "Order_businessDate_idx")
   @@index([businessDate, status, createdAt])
   @@index([businessDate, status, ticketNumber])
 }
@@ -140,8 +141,8 @@ model OrderItem {
   id         String            @id @default(cuid())
   orderId    String
   order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId String
-  menuItem   MenuItem          @relation(fields: [menuItemId], references: [id])
+  menuItemId String?
+  menuItem   MenuItem?         @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
   itemCode   String?
   name       String
   sizeName   String?
@@ -149,7 +150,7 @@ model OrderItem {
   quantity    Int               @default(1)
   preferences String?
   options     OrderItemOption[]
-  @@index([orderId])
+  @@index([orderId], map: "OrderItem_orderId_idx")
 }
 
 model OrderItemOption {

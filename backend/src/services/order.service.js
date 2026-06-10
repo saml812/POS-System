@@ -109,7 +109,6 @@ async function updateOrder(tx, orderId, data, relationInclude) {
     where: { id: orderId },
     data,
     include: relationInclude,
-    relationLoadStrategy: "join",
   });
 }
 
@@ -232,7 +231,6 @@ async function buildLineItems(items) {
 
 async function listToday(statusFilter, relationInclude) {
   const orders = await prisma.order.findMany({
-    relationLoadStrategy: "join",
     where: { businessDate: getBusinessDate(), ...statusFilter },
     include: relationInclude,
     orderBy: [{ ticketNumber: "asc" }, { createdAt: "asc" }],
@@ -273,7 +271,6 @@ export async function createOrder(user, { items }) {
         items: { create: lineItems },
       },
       include: ITEMS,
-      relationLoadStrategy: "join",
     });
 
     await logTransition(tx, created.id, null, "PENDING", user.id);

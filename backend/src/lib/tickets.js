@@ -109,12 +109,13 @@ async function upsertSetting(key, value) {
 }
 
 async function maxTicketNumber(client, businessDate) {
-  const { _max: { ticketNumber } } = await client.order.aggregate({
-    where: { businessDate },
-    _max: { ticketNumber: true },
-  });
+  const rows = await client.$queryRaw`
+    SELECT COALESCE(MAX("ticketNumber"), 0)::int AS max
+    FROM "Order"
+    WHERE "businessDate" = ${businessDate}
+  `;
 
-  return ticketNumber ?? 0;
+  return Number(rows[0]?.max ?? 0);
 }
 
 function formatYmd(date, timeZone) {
@@ -200,7 +201,7 @@ export async function getNextTicketNumber(tx, businessDate) {
     SELECT pg_advisory_xact_lock(hashtext(${businessDate}))
   `;
 
-  return maxTicketNumber(tx, businessDate) + 1;
+  return (await maxTicketNumber(tx, businessDate)) + 1;
 }
 
 export async function getTicketStatus() {
