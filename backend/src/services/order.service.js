@@ -1,24 +1,33 @@
 import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
-import { getBusinessDate, getNextTicketNumberForShift } from "../lib/shift.js";
+import { getBusinessDate, getNextTicketNumber } from "../lib/tickets.js";
 import { emitOrderEvent } from "../lib/socket.js";
 
-const userSelect = { id: true, email: true, role: true };
+const ACTOR = { id: true, email: true, role: true };
+const ITEMS = { items: { include: { options: true } } };
 
-const orderItemsInclude = {
-  items: { include: { options: true } },
+const include = {
+  active: { ...ITEMS, placedBy: { select: ACTOR } },
+  cashier: {
+    ...ITEMS,
+    placedBy: { select: ACTOR },
+    finishedBy: { select: ACTOR },
+  },
 };
 
-const orderActiveInclude = {
-  ...orderItemsInclude,
-  placedBy: { select: userSelect },
-};
-
-const orderKitchenInclude = orderActiveInclude;
-
-const orderCashierInclude = {
-  ...orderActiveInclude,
-  finishedBy: { select: userSelect },
+const menuItemSelect = {
+  id: true,
+  itemNumber: true,
+  name: true,
+  price: true,
+  options: {
+    where: { isAvailable: true },
+    select: { id: true, name: true, priceDelta: true },
+  },
+  sizes: {
+    where: { isAvailable: true },
+    select: { id: true, name: true, priceDelta: true },
+  },
 };
 
 function toUserSummary(user) {
@@ -59,161 +68,202 @@ function toOrder(order) {
   };
 }
 
-function withActor(order, actorField, user) {
-  return {
-    ...order,
-    [actorField]: toUserSummary(user),
-  };
+function withActor(order, field, user) {
+  return { ...order, [field]: toUserSummary(user) };
+}
+
+function publishOrder(payload, ...events) {
+  for (const event of events) {
+    emitOrderEvent(event, payload);
+  }
+  return payload;
+}
+
+function requireStatus(order, status, action) {
+  if (order.status !== status) {
+    throw appError(`Cannot ${action} order in ${order.status} status`);
+  }
 }
 
 async function logTransition(tx, orderId, fromStatus, toStatus, userId) {
   await tx.orderStatusLog.create({
-    data: {
-      orderId,
-      fromStatus,
-      toStatus,
-      changedById: userId,
-    },
+    data: { orderId, fromStatus, toStatus, changedById: userId },
   });
 }
 
-async function transitionOrder(orderId, user, updateFn, eventType, actorField) {
+async function findTodayOrder(tx, orderId) {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, status: true, businessDate: true },
+  });
+
+  if (!order || order.businessDate !== getBusinessDate()) {
+    throw appError("Order not found", 404);
+  }
+
+  return order;
+}
+
+async function updateOrder(tx, orderId, data, relationInclude) {
+  return tx.order.update({
+    where: { id: orderId },
+    data,
+    include: relationInclude,
+    relationLoadStrategy: "join",
+  });
+}
+
+async function runTransition(orderId, user, { apply, event, actorField }) {
   const order = await prisma.$transaction(async (tx) => {
-    const current = await tx.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, status: true, businessDate: true },
-    });
-    if (!current) {
-      throw appError("Order not found", 404);
-    }
-
-    if (current.businessDate !== getBusinessDate()) {
-      throw appError("Order not found", 404);
-    }
-
-    const updated = await updateFn(tx, current);
+    const current = await findTodayOrder(tx, orderId);
+    const updated = await apply(tx, current);
     await logTransition(tx, orderId, current.status, updated.status, user.id);
     return actorField ? withActor(updated, actorField, user) : updated;
   });
 
   const payload = toOrder(order);
-  emitOrderEvent(eventType, payload);
-  if (eventType !== "order:completed" && eventType !== "order:cancelled") {
-    emitOrderEvent("order:updated", payload);
-  }
+  const events =
+    event === "order:completed" || event === "order:cancelled"
+      ? [event]
+      : [event, "order:updated"];
 
-  return payload;
+  return publishOrder(payload, ...events);
 }
 
-export async function createOrder(user, { items }) {
+function parseItemEntry(entry) {
+  const menuItemId = entry.menuItemId?.trim();
+  const quantity = Number(entry.quantity ?? 1);
+
+  if (!menuItemId) {
+    throw appError("Each item requires a menuItemId");
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw appError("quantity must be a positive integer");
+  }
+
+  return {
+    menuItemId,
+    quantity,
+    optionIds: Array.isArray(entry.optionIds)
+      ? [...new Set(entry.optionIds.map((id) => String(id).trim()).filter(Boolean))]
+      : [],
+    sizeId: typeof entry.sizeId === "string" ? entry.sizeId.trim() || null : null,
+    preferences:
+      typeof entry.preferences === "string"
+        ? entry.preferences.trim() || null
+        : null,
+  };
+}
+
+function pickOptions(menuItem, optionIds) {
+  return optionIds.map((optionId) => {
+    const option = menuItem.options.find((row) => row.id === optionId);
+    if (!option) {
+      throw appError(`Invalid option for ${menuItem.name}: ${optionId}`);
+    }
+    return option;
+  });
+}
+
+function pickSize(menuItem, sizeId) {
+  if (sizeId) {
+    const size = menuItem.sizes.find((row) => row.id === sizeId);
+    if (!size) {
+      throw appError(`Invalid size for ${menuItem.name}: ${sizeId}`);
+    }
+    return size;
+  }
+
+  if (menuItem.sizes.length > 0) {
+    throw appError(`A size is required for ${menuItem.name}`);
+  }
+
+  return null;
+}
+
+function buildLineItem(menuItem, entry) {
+  const selectedOptions = pickOptions(menuItem, entry.optionIds);
+  const selectedSize = pickSize(menuItem, entry.sizeId);
+  const optionTotal = selectedOptions.reduce(
+    (sum, option) => sum + Number(option.priceDelta),
+    0,
+  );
+  const sizeTotal = selectedSize ? Number(selectedSize.priceDelta) : 0;
+
+  return {
+    menuItemId: menuItem.id,
+    itemCode: menuItem.itemNumber ?? null,
+    name: menuItem.name,
+    sizeName: selectedSize?.name ?? null,
+    price: Number(menuItem.price) + optionTotal + sizeTotal,
+    quantity: entry.quantity,
+    preferences: entry.preferences,
+    options: {
+      create: selectedOptions.map((option) => ({
+        name: option.name,
+        priceDelta: option.priceDelta,
+      })),
+    },
+  };
+}
+
+async function buildLineItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
     throw appError("At least one item is required");
   }
 
-  const parsedEntries = items.map((entry) => {
-    const menuItemId = entry.menuItemId?.trim();
-    const quantity = Number(entry.quantity ?? 1);
-
-    if (!menuItemId) {
-      throw appError("Each item requires a menuItemId");
-    }
-
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      throw appError("quantity must be a positive integer");
-    }
-
-    const optionIds = Array.isArray(entry.optionIds)
-      ? [...new Set(entry.optionIds.map((id) => String(id).trim()).filter(Boolean))]
-      : [];
-
-    const sizeId =
-      typeof entry.sizeId === "string" ? entry.sizeId.trim() || null : null;
-
-    const preferences =
-      typeof entry.preferences === "string"
-        ? entry.preferences.trim() || null
-        : null;
-
-    return { menuItemId, quantity, optionIds, sizeId, preferences };
-  });
-
-  const menuItemIds = [...new Set(parsedEntries.map((entry) => entry.menuItemId))];
+  const entries = items.map(parseItemEntry);
+  const menuItemIds = [...new Set(entries.map((entry) => entry.menuItemId))];
   const menuItems = await prisma.menuItem.findMany({
-    where: {
-      id: { in: menuItemIds },
-      isAvailable: true,
-    },
-    select: {
-      id: true,
-      itemNumber: true,
-      name: true,
-      price: true,
-      options: {
-        where: { isAvailable: true },
-        select: { id: true, name: true, priceDelta: true },
-      },
-      sizes: {
-        where: { isAvailable: true },
-        select: { id: true, name: true, priceDelta: true },
-      },
-    },
+    where: { id: { in: menuItemIds }, isAvailable: true },
+    select: menuItemSelect,
   });
   const menuItemById = new Map(menuItems.map((item) => [item.id, item]));
 
-  const lineItems = [];
-  for (const entry of parsedEntries) {
+  return entries.map((entry) => {
     const menuItem = menuItemById.get(entry.menuItemId);
     if (!menuItem) {
       throw appError(`Menu item not available: ${entry.menuItemId}`);
     }
+    return buildLineItem(menuItem, entry);
+  });
+}
 
-    const selectedOptions = [];
-    for (const optionId of entry.optionIds) {
-      const option = menuItem.options.find((row) => row.id === optionId);
-      if (!option) {
-        throw appError(`Invalid option for ${menuItem.name}: ${optionId}`);
-      }
-      selectedOptions.push(option);
-    }
+async function listToday(statusFilter, relationInclude) {
+  const orders = await prisma.order.findMany({
+    relationLoadStrategy: "join",
+    where: { businessDate: getBusinessDate(), ...statusFilter },
+    include: relationInclude,
+    orderBy: [{ ticketNumber: "asc" }, { createdAt: "asc" }],
+  });
 
-    let selectedSize = null;
-    if (entry.sizeId) {
-      selectedSize = menuItem.sizes.find((row) => row.id === entry.sizeId);
-      if (!selectedSize) {
-        throw appError(`Invalid size for ${menuItem.name}: ${entry.sizeId}`);
-      }
-    } else if (menuItem.sizes.length > 0) {
-      throw appError(`A size is required for ${menuItem.name}`);
-    }
+  return orders.map(toOrder);
+}
 
-    const optionTotal = selectedOptions.reduce(
-      (sum, option) => sum + Number(option.priceDelta),
-      0,
-    );
-    const sizeTotal = selectedSize ? Number(selectedSize.priceDelta) : 0;
-    const unitPrice = Number(menuItem.price) + optionTotal + sizeTotal;
-
-    lineItems.push({
-      menuItemId: menuItem.id,
-      itemCode: menuItem.itemNumber ?? null,
-      name: menuItem.name,
-      sizeName: selectedSize ? selectedSize.name : null,
-      price: unitPrice,
-      quantity: entry.quantity,
-      preferences: entry.preferences,
-      options: {
-        create: selectedOptions.map((option) => ({
-          name: option.name,
-          priceDelta: option.priceDelta,
-        })),
-      },
-    });
+function assertCanCancel(order, user) {
+  if (order.status === "COMPLETED" || order.status === "CANCELLED") {
+    throw appError(`Cannot cancel order in ${order.status} status`);
   }
 
+  if (user.role === "CASHIER" && order.status !== "PENDING") {
+    throw appError("Cashiers can only cancel PENDING orders");
+  }
+
+  if (
+    user.role === "KITCHEN" &&
+    !["PENDING", "IN_PROGRESS"].includes(order.status)
+  ) {
+    throw appError("Kitchen can only cancel PENDING or IN_PROGRESS orders");
+  }
+}
+
+export async function createOrder(user, { items }) {
+  const lineItems = await buildLineItems(items);
   const businessDate = getBusinessDate();
 
   const order = await prisma.$transaction(async (tx) => {
-    const ticketNumber = await getNextTicketNumberForShift(tx, businessDate);
+    const ticketNumber = await getNextTicketNumber(tx, businessDate);
     const created = await tx.order.create({
       data: {
         ticketNumber,
@@ -222,7 +272,7 @@ export async function createOrder(user, { items }) {
         placedById: user.id,
         items: { create: lineItems },
       },
-      include: orderItemsInclude,
+      include: ITEMS,
       relationLoadStrategy: "join",
     });
 
@@ -230,33 +280,12 @@ export async function createOrder(user, { items }) {
     return withActor(created, "placedBy", user);
   });
 
-  const payload = toOrder(order);
-  emitOrderEvent("order:created", payload);
-  emitOrderEvent("order:updated", payload);
-  return payload;
-}
-
-function currentShiftWhere(extra = {}) {
-  return {
-    businessDate: getBusinessDate(),
-    ...extra,
-  };
-}
-
-async function listShiftOrders(statusFilter, include) {
-  const orders = await prisma.order.findMany({
-    relationLoadStrategy: "join",
-    where: currentShiftWhere(statusFilter),
-    include,
-    orderBy: [{ ticketNumber: "asc" }, { createdAt: "asc" }],
-  });
-
-  return orders.map(toOrder);
+  return publishOrder(toOrder(order), "order:created", "order:updated");
 }
 
 export async function getActiveOrders({ status } = {}) {
   const statusFilter = status ? { status } : { status: { not: "COMPLETED" } };
-  return listShiftOrders(statusFilter, orderActiveInclude);
+  return listToday(statusFilter, include.active);
 }
 
 export async function getKitchenFeed({ includeVoided = false } = {}) {
@@ -264,7 +293,7 @@ export async function getKitchenFeed({ includeVoided = false } = {}) {
     ? ["PENDING", "IN_PROGRESS", "FINISHED", "CANCELLED"]
     : ["PENDING", "IN_PROGRESS", "FINISHED"];
 
-  return listShiftOrders({ status: { in: statuses } }, orderKitchenInclude);
+  return listToday({ status: { in: statuses } }, include.active);
 }
 
 export async function getCashierFeed({ includeInProgress = false } = {}) {
@@ -272,49 +301,26 @@ export async function getCashierFeed({ includeInProgress = false } = {}) {
     ? ["IN_PROGRESS", "FINISHED"]
     : ["FINISHED"];
 
-  return listShiftOrders({ status: { in: statuses } }, orderCashierInclude);
-}
-
-async function updateOrderStatus(tx, orderId, data, include) {
-  return tx.order.update({
-    where: { id: orderId },
-    data,
-    include,
-    relationLoadStrategy: "join",
-  });
+  return listToday({ status: { in: statuses } }, include.cashier);
 }
 
 export async function startOrder(orderId, user) {
-  return transitionOrder(
-    orderId,
-    user,
-    async (tx, order) => {
-      if (order.status !== "PENDING") {
-        throw appError(`Cannot start order in ${order.status} status`);
-      }
-
-      return updateOrderStatus(
-        tx,
-        order.id,
-        { status: "IN_PROGRESS" },
-        orderKitchenInclude,
-      );
+  return runTransition(orderId, user, {
+    event: "order:updated",
+    apply: async (tx, order) => {
+      requireStatus(order, "PENDING", "start");
+      return updateOrder(tx, order.id, { status: "IN_PROGRESS" }, include.active);
     },
-    "order:updated",
-    null,
-  );
+  });
 }
 
 export async function finishOrder(orderId, user) {
-  return transitionOrder(
-    orderId,
-    user,
-    async (tx, order) => {
-      if (order.status !== "IN_PROGRESS") {
-        throw appError(`Cannot finish order in ${order.status} status`);
-      }
-
-      return updateOrderStatus(
+  return runTransition(orderId, user, {
+    event: "order:updated",
+    actorField: "finishedBy",
+    apply: async (tx, order) => {
+      requireStatus(order, "IN_PROGRESS", "finish");
+      return updateOrder(
         tx,
         order.id,
         {
@@ -322,24 +328,19 @@ export async function finishOrder(orderId, user) {
           finishedAt: new Date(),
           finishedById: user.id,
         },
-        orderCashierInclude,
+        include.cashier,
       );
     },
-    "order:updated",
-    "finishedBy",
-  );
+  });
 }
 
 export async function completeOrder(orderId, user) {
-  return transitionOrder(
-    orderId,
-    user,
-    async (tx, order) => {
-      if (order.status !== "FINISHED") {
-        throw appError(`Cannot complete order in ${order.status} status`);
-      }
-
-      return updateOrderStatus(
+  return runTransition(orderId, user, {
+    event: "order:completed",
+    actorField: "completedBy",
+    apply: async (tx, order) => {
+      requireStatus(order, "FINISHED", "complete");
+      return updateOrder(
         tx,
         order.id,
         {
@@ -347,32 +348,19 @@ export async function completeOrder(orderId, user) {
           completedAt: new Date(),
           completedById: user.id,
         },
-        orderCashierInclude,
+        include.cashier,
       );
     },
-    "order:completed",
-    "completedBy",
-  );
+  });
 }
 
 export async function cancelOrder(orderId, user, { reason } = {}) {
-  return transitionOrder(
-    orderId,
-    user,
-    async (tx, order) => {
-      if (order.status === "COMPLETED" || order.status === "CANCELLED") {
-        throw appError(`Cannot cancel order in ${order.status} status`);
-      }
-
-      if (user.role === "CASHIER" && order.status !== "PENDING") {
-        throw appError("Cashiers can only cancel PENDING orders");
-      }
-
-      if (user.role === "KITCHEN" && !["PENDING", "IN_PROGRESS"].includes(order.status)) {
-        throw appError("Kitchen can only cancel PENDING or IN_PROGRESS orders");
-      }
-
-      return updateOrderStatus(
+  return runTransition(orderId, user, {
+    event: "order:cancelled",
+    actorField: "cancelledBy",
+    apply: async (tx, order) => {
+      assertCanCancel(order, user);
+      return updateOrder(
         tx,
         order.id,
         {
@@ -382,10 +370,8 @@ export async function cancelOrder(orderId, user, { reason } = {}) {
           cancelledAt: new Date(),
           cancelledById: user.id,
         },
-        orderKitchenInclude,
+        include.active,
       );
     },
-    "order:cancelled",
-    "cancelledBy",
-  );
+  });
 }

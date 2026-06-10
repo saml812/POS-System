@@ -12,7 +12,7 @@ import ordersRoutes from "./routes/orders.routes.js";
 import kitchenRoutes from "./routes/kitchen.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
-import { refreshTicketResetConfig } from "./lib/ticketResetConfig.js";
+import { refreshTicketResetConfig } from "./lib/tickets.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
