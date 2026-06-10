@@ -100,7 +100,7 @@ async function ensureDefaultSettings() {
   return [...rows, ...missing];
 }
 
-async function upsertSetting(key, value) {
+function upsertSetting(key, value) {
   return prisma.appSetting.upsert({
     where: { key },
     create: { key, value },
