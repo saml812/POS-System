@@ -108,14 +108,15 @@ function upsertSetting(key, value) {
   });
 }
 
-async function maxTicketNumber(client, businessDate) {
+async function lastTicketIssued(client, businessDate) {
   const rows = await client.$queryRaw`
-    SELECT COALESCE(MAX("ticketNumber"), 0)::int AS max
+    SELECT MAX("ticketNumber") AS max
     FROM "Order"
     WHERE "businessDate" = ${businessDate}
   `;
 
-  return Number(rows[0]?.max ?? 0);
+  const max = rows[0]?.max;
+  return max == null ? 0 : Number(max);
 }
 
 function formatYmd(date, timeZone) {
@@ -201,7 +202,7 @@ export async function getNextTicketNumber(tx, businessDate) {
     SELECT pg_advisory_xact_lock(hashtext(${businessDate}))
   `;
 
-  return (await maxTicketNumber(tx, businessDate)) + 1;
+  return (await lastTicketIssued(tx, businessDate)) + 1;
 }
 
 export async function getTicketStatus() {
@@ -209,6 +210,6 @@ export async function getTicketStatus() {
 
   return {
     businessDate,
-    lastTicketNumber: await maxTicketNumber(prisma, businessDate),
+    lastTicketNumber: await lastTicketIssued(prisma, businessDate),
   };
 }

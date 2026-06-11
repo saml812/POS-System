@@ -48,7 +48,7 @@ initSocket(httpServer);
 const server = httpServer.listen(PORT, async () => {
   await connectDB();
   await refreshTicketResetConfig();
-  console.log(`Server running on PORT ${PORT}`);
+  console.log(`API running on http://localhost:${PORT}`);
 });
 
 process.on("unhandledRejection", (err) => {

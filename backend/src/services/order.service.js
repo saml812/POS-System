@@ -38,6 +38,7 @@ function toOrder(order) {
   return {
     id: order.id,
     ticketNumber: order.ticketNumber,
+    businessDate: order.businessDate,
     status: order.status,
     previousStatus: order.previousStatus,
     cancelReason: order.cancelReason,
