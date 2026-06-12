@@ -2,6 +2,7 @@ import { ENV } from "../src/lib/env.js";
 import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
+import { Menu, type SeedModifier } from "./menu-seed-data.js";
 
 const adapter = new PrismaPg({
   connectionString: ENV.DATABASE_URL!,
@@ -14,15 +15,9 @@ const DEMO_PASSWORD = "password123";
 const demoUsers = [
   { email: "cashier@demo.com", role: "CASHIER" as const },
   { email: "kitchen@demo.com", role: "KITCHEN" as const },
-  { email: "manager@demo.com", role: "MANAGER" as const },
+  { email: "manager1@demo.com", role: "MANAGER" as const },
+  { email: "manager2@demo.com", role: "MANAGER" as const },
 ];
-
-type SeedModifier = {
-  id: string;
-  name: string;
-  priceDelta: number;
-  sortOrder: number;
-};
 
 function modifierUpsertArgs(modifier: SeedModifier, menuItemId: string) {
   return {
@@ -41,201 +36,6 @@ function modifierUpsertArgs(modifier: SeedModifier, menuItemId: string) {
     },
   };
 }
-
-type SeedItem = {
-  id: string;
-  itemNumber: string | null;
-  name: string;
-  description: string;
-  price: number;
-  sortOrder: number;
-  options?: SeedModifier[];
-  sizes?: SeedModifier[];
-};
-
-type SeedCategory = {
-  id: string;
-  name: string;
-  sortOrder: number;
-  items: SeedItem[];
-};
-
-const demoMenu: SeedCategory[] = [
-  {
-    id: "appetizers",
-    name: "Appetizers",
-    sortOrder: 0,
-    items: [
-      {
-        id: "garlic-bread",
-        itemNumber: "A1",
-        name: "Garlic Bread",
-        description: "Toasted bread with garlic butter",
-        price: 5.99,
-        sortOrder: 0,
-      },
-      {
-        id: "caesar-salad",
-        itemNumber: "A2",
-        name: "Caesar Salad",
-        description: "Romaine, parmesan, croutons",
-        price: 8.99,
-        sortOrder: 1,
-        options: [
-          {
-            id: "caesar-no-onions",
-            name: "No onions",
-            priceDelta: 0,
-            sortOrder: 0,
-          },
-          {
-            id: "caesar-extra-cheese",
-            name: "Extra cheese",
-            priceDelta: 1.5,
-            sortOrder: 1,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "soups",
-    name: "Soups",
-    sortOrder: 1,
-    items: [
-      {
-        id: "tomato-soup",
-        itemNumber: "S1",
-        name: "Tomato Soup",
-        description: "Daily soup",
-        price: 6.49,
-        sortOrder: 0,
-      },
-    ],
-  },
-  {
-    id: "combos",
-    name: "Special Combos",
-    sortOrder: 2,
-    items: [
-      {
-        id: "lunch-combo",
-        itemNumber: "C1",
-        name: "Lunch Combo",
-        description: "Main + drink",
-        price: 14.99,
-        sortOrder: 0,
-      },
-    ],
-  },
-  {
-    id: "sides",
-    name: "Sides",
-    sortOrder: 3,
-    items: [
-      {
-        id: "fries",
-        itemNumber: null,
-        name: "French Fries",
-        description: "Crispy fries",
-        price: 3.99,
-        sortOrder: 0,
-      },
-    ],
-  },
-  {
-    id: "mains",
-    name: "Mains",
-    sortOrder: 4,
-    items: [
-      {
-        id: "margherita-pizza",
-        itemNumber: "1",
-        name: "Margherita Pizza",
-        description: "Tomato, mozzarella, basil",
-        price: 12.99,
-        sortOrder: 0,
-        options: [
-          {
-            id: "pizza-extra-cheese",
-            name: "Extra cheese",
-            priceDelta: 2,
-            sortOrder: 0,
-          },
-        ],
-      },
-      {
-        id: "grilled-chicken",
-        itemNumber: "2",
-        name: "Grilled Chicken",
-        description: "Served with seasonal vegetables",
-        price: 15.99,
-        sortOrder: 1,
-        options: [
-          {
-            id: "chicken-extra",
-            name: "Extra chicken",
-            priceDelta: 3.5,
-            sortOrder: 0,
-          },
-          {
-            id: "chicken-no-veg",
-            name: "No vegetables",
-            priceDelta: 0,
-            sortOrder: 1,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "drinks",
-    name: "Drinks",
-    sortOrder: 5,
-    items: [
-      {
-        id: "soft-drink",
-        itemNumber: "11",
-        name: "Soft Drink",
-        description: "Fountain soda",
-        price: 2.99,
-        sortOrder: 0,
-        sizes: [
-          { id: "soft-drink-small", name: "Small", priceDelta: 0, sortOrder: 0 },
-          { id: "soft-drink-regular", name: "Regular", priceDelta: 0, sortOrder: 1 },
-          { id: "soft-drink-large", name: "Large", priceDelta: 1, sortOrder: 2 },
-        ],
-      },
-      {
-        id: "house-coffee",
-        itemNumber: "12",
-        name: "House Coffee",
-        description: "Freshly brewed",
-        price: 3.49,
-        sortOrder: 1,
-        sizes: [
-          { id: "house-coffee-small", name: "Small", priceDelta: 0, sortOrder: 0 },
-          { id: "house-coffee-large", name: "Large", priceDelta: 0.8, sortOrder: 1 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "desserts",
-    name: "Desserts",
-    sortOrder: 6,
-    items: [
-      {
-        id: "chocolate-brownie",
-        itemNumber: "21",
-        name: "Chocolate Brownie",
-        description: "Warm brownie with ice cream",
-        price: 6.99,
-        sortOrder: 0,
-      },
-    ],
-  },
-];
 
 const defaultAppSettings = [
   { key: "ticket_reset.timezone", value: "local" },
@@ -270,7 +70,9 @@ async function main() {
     console.log(`  ${email} (${role})`);
   }
 
-  for (const category of demoMenu) {
+  let itemCount = 0;
+
+  for (const category of Menu) {
     const createdCategory = await prisma.category.upsert({
       where: { id: category.id },
       update: {
@@ -285,6 +87,8 @@ async function main() {
     });
 
     for (const item of category.items) {
+      itemCount += 1;
+
       await prisma.menuItem.upsert({
         where: { id: item.id },
         update: {
@@ -306,12 +110,28 @@ async function main() {
         },
       });
 
+      const optionIds = (item.options ?? []).map((option) => option.id);
+      await prisma.menuItemOption.deleteMany({
+        where: {
+          menuItemId: item.id,
+          ...(optionIds.length > 0 ? { id: { notIn: optionIds } } : {}),
+        },
+      });
+
       for (const option of item.options ?? []) {
         await prisma.menuItemOption.upsert({
           where: { id: option.id },
           ...modifierUpsertArgs(option, item.id),
         });
       }
+
+      const sizeIds = (item.sizes ?? []).map((size) => size.id);
+      await prisma.menuItemSize.deleteMany({
+        where: {
+          menuItemId: item.id,
+          ...(sizeIds.length > 0 ? { id: { notIn: sizeIds } } : {}),
+        },
+      });
 
       for (const size of item.sizes ?? []) {
         await prisma.menuItemSize.upsert({
@@ -322,7 +142,9 @@ async function main() {
     }
   }
 
-  console.log(`Seeded ${demoMenu.length} categories with menu items`);
+  console.log(
+    `Seeded ${Menu.length} categories with ${itemCount} menu items`,
+  );
 }
 
 main()
