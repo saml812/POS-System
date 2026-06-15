@@ -13,6 +13,8 @@ import { useAuth } from "../context/AuthContext";
 import { useLocale } from "../context/LocaleContext";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useOrderFeed } from "../hooks/useOrderFeed";
+import type { OrderSocketEvent } from "../hooks/useOrderSocket";
+import { useNotificationSound } from "../hooks/useNotificationSound";
 import { canViewKitchen } from "../lib/permissions";
 import type { Order, OrderStatus } from "../types";
 import { applyKitchenOrderEvent, orderStatusLabel } from "../utils/order";
@@ -41,10 +43,21 @@ export function KitchenFeedPage() {
     [includeVoided],
   );
 
+  const { playNotificationSound } = useNotificationSound();
+
   const applyEvent = useCallback(
     (orders: Order[], order: Order) =>
       applyKitchenOrderEvent(orders, order, includeVoided),
     [includeVoided],
+  );
+
+  const onOrderEvent = useCallback(
+    (event: OrderSocketEvent, order: Order) => {
+      if (event === "order:created" && order.status === "PENDING") {
+        playNotificationSound();
+      }
+    },
+    [playNotificationSound],
   );
 
   const { orders, loading, error, setError, reload } = useOrderFeed({
@@ -52,6 +65,7 @@ export function KitchenFeedPage() {
     load: loadFeed,
     room: "kitchen",
     applyEvent,
+    onOrderEvent,
   });
 
   const { success, actionId, clearMessages, run } = useAsyncAction(
