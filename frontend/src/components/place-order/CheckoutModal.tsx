@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "../../context/LocaleContext";
-import type { PaymentMethod, PaymentPayload } from "../../types";
+import type { TenderPayload, TenderType } from "../../types";
 import { formatMoney } from "../../utils/order";
 
-export type CheckoutStep = "payment" | "split-cash";
 export type CheckoutOrderType = "walk-in" | "call-in";
 
 type CheckoutModalProps = {
@@ -11,16 +10,11 @@ type CheckoutModalProps = {
   total: number;
   ticketNumber?: number;
   mode: "place" | "collect";
-  step?: CheckoutStep;
-  splitCardAmount?: number;
-  splitCashAmount?: number;
   busy?: boolean;
   onClose: () => void;
-  onPlaceWalkIn: (payment: PaymentPayload) => void;
+  onPlaceWalkIn: (tender: TenderPayload) => void;
   onPlaceCallIn: () => void;
-  onCollect: (payment: PaymentPayload) => void;
-  onConfirmSplitCash: () => void;
-  onVoidCard?: () => void;
+  onConfirmPaid: (tender: TenderPayload) => void;
 };
 
 export function CheckoutModal({
@@ -28,20 +22,15 @@ export function CheckoutModal({
   total,
   ticketNumber,
   mode,
-  step = "payment",
-  splitCardAmount = 0,
-  splitCashAmount = 0,
   busy = false,
   onClose,
   onPlaceWalkIn,
   onPlaceCallIn,
-  onCollect,
-  onConfirmSplitCash,
-  onVoidCard,
+  onConfirmPaid,
 }: CheckoutModalProps) {
   const { t } = useLocale();
   const [orderType, setOrderType] = useState<CheckoutOrderType>("walk-in");
-  const [method, setMethod] = useState<PaymentMethod>("CARD");
+  const [method, setMethod] = useState<TenderType>("CARD");
   const [cardAmountInput, setCardAmountInput] = useState("");
 
   useEffect(() => {
@@ -66,7 +55,7 @@ export function CheckoutModal({
 
   if (!open) return null;
 
-  function buildPayment(): PaymentPayload {
+  function buildTender(): TenderPayload {
     if (method === "SPLIT") {
       return { method: "SPLIT", cardAmount: cardAmount };
     }
@@ -74,27 +63,22 @@ export function CheckoutModal({
   }
 
   function handlePrimary() {
-    if (step === "split-cash") {
-      onConfirmSplitCash();
-      return;
-    }
-
     if (mode === "place" && payAtPickup) {
       onPlaceCallIn();
       return;
     }
 
-    const payment = buildPayment();
+    const tender = buildTender();
     if (mode === "place") {
-      onPlaceWalkIn(payment);
+      onPlaceWalkIn(tender);
     } else {
-      onCollect(payment);
+      onConfirmPaid(tender);
     }
   }
 
   const splitInvalid =
+    !payAtPickup &&
     method === "SPLIT" &&
-    step === "payment" &&
     (cardAmount <= 0 || cardAmount >= total);
 
   return (
@@ -107,11 +91,7 @@ export function CheckoutModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="checkout-title">
-          {step === "split-cash"
-            ? t("payment.splitCashTitle")
-            : mode === "collect"
-              ? t("payment.collectTitle")
-              : t("payment.checkoutTitle")}
+          {mode === "collect" ? t("checkout.confirmPickupTitle") : t("checkout.title")}
         </h3>
 
         {ticketNumber != null ? (
@@ -124,103 +104,83 @@ export function CheckoutModal({
           {t("common.total")}: <strong>{formatMoney(total)}</strong>
         </p>
 
-        {step === "split-cash" ? (
-          <div className="checkout-split-cash">
-            <p>{t("payment.splitCashPrompt", { amount: formatMoney(splitCashAmount) })}</p>
-            <p className="muted">
-              {t("payment.splitCardCharged", { amount: formatMoney(splitCardAmount) })}
-            </p>
-            {onVoidCard ? (
+        {mode === "place" ? (
+          <div className="checkout-order-type">
+            <span className="checkout-methods-label">{t("checkout.orderTypeLabel")}</span>
+            <div className="checkout-order-type-grid">
               <button
                 type="button"
-                className="btn btn-small btn-danger checkout-void-card"
+                className={`checkout-order-type-btn ${orderType === "walk-in" ? "active" : ""}`}
                 disabled={busy}
-                onClick={onVoidCard}
+                onClick={() => setOrderType("walk-in")}
               >
-                {t("payment.voidCard")}
+                <span className="checkout-order-type-title">{t("checkout.walkIn")}</span>
+                <span className="checkout-order-type-desc">{t("checkout.walkInDesc")}</span>
               </button>
+              <button
+                type="button"
+                className={`checkout-order-type-btn checkout-order-type-btn-callin ${orderType === "call-in" ? "active" : ""}`}
+                disabled={busy}
+                onClick={() => setOrderType("call-in")}
+              >
+                <span className="checkout-order-type-title">{t("checkout.callIn")}</span>
+                <span className="checkout-order-type-desc">{t("checkout.callInDesc")}</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!payAtPickup || mode === "collect" ? (
+          <div className="checkout-methods">
+            <p className="checkout-manual-hint muted">{t("checkout.manualHint")}</p>
+            <span className="checkout-methods-label">{t("checkout.tenderLabel")}</span>
+            <div className="checkout-method-grid">
+              {(["CASH", "CARD", "SPLIT"] as TenderType[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`checkout-method-btn ${method === value ? "active" : ""}`}
+                  disabled={busy}
+                  onClick={() => setMethod(value)}
+                >
+                  {t(`checkout.tenders.${value}`)}
+                </button>
+              ))}
+            </div>
+
+            {method === "SPLIT" ? (
+              <label className="checkout-split-field">
+                <span>{t("checkout.cardAmount")}</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={total - 0.01}
+                  className="dd-input"
+                  value={cardAmountInput}
+                  onChange={(e) => setCardAmountInput(e.target.value)}
+                  disabled={busy}
+                />
+                <span className="muted">
+                  {t("checkout.cashRemainder", { amount: formatMoney(cashRemainder) })}
+                </span>
+              </label>
             ) : null}
           </div>
         ) : (
-          <>
-            {mode === "place" ? (
-              <div className="checkout-order-type">
-                <span className="checkout-methods-label">{t("payment.orderTypeLabel")}</span>
-                <div className="checkout-order-type-grid">
-                  <button
-                    type="button"
-                    className={`checkout-order-type-btn ${orderType === "walk-in" ? "active" : ""}`}
-                    disabled={busy}
-                    onClick={() => setOrderType("walk-in")}
-                  >
-                    <span className="checkout-order-type-title">{t("payment.walkIn")}</span>
-                    <span className="checkout-order-type-desc">{t("payment.walkInDesc")}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`checkout-order-type-btn checkout-order-type-btn-callin ${orderType === "call-in" ? "active" : ""}`}
-                    disabled={busy}
-                    onClick={() => setOrderType("call-in")}
-                  >
-                    <span className="checkout-order-type-title">{t("payment.callIn")}</span>
-                    <span className="checkout-order-type-desc">{t("payment.callInDesc")}</span>
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {!payAtPickup || mode === "collect" ? (
-              <div className="checkout-methods">
-                <span className="checkout-methods-label">{t("payment.method")}</span>
-                <div className="checkout-method-grid">
-                  {(["CASH", "CARD", "SPLIT"] as PaymentMethod[]).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`checkout-method-btn ${method === value ? "active" : ""}`}
-                      disabled={busy}
-                      onClick={() => setMethod(value)}
-                    >
-                      {t(`payment.methods.${value}`)}
-                    </button>
-                  ))}
-                </div>
-
-                {method === "SPLIT" ? (
-                  <label className="checkout-split-field">
-                    <span>{t("payment.cardAmount")}</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      max={total - 0.01}
-                      className="dd-input"
-                      value={cardAmountInput}
-                      onChange={(e) => setCardAmountInput(e.target.value)}
-                      disabled={busy}
-                    />
-                    <span className="muted">
-                      {t("payment.cashRemainder", { amount: formatMoney(cashRemainder) })}
-                    </span>
-                  </label>
-                ) : null}
-              </div>
-            ) : (
-              <div className="checkout-callin-panel" role="status">
-                <span className="checkout-callin-icon" aria-hidden>
-                  📞
-                </span>
-                <div>
-                  <p className="checkout-callin-panel-title">{t("payment.callIn")}</p>
-                  <p className="checkout-callin-panel-desc">{t("payment.callInDesc")}</p>
-                </div>
-              </div>
-            )}
-          </>
+          <div className="checkout-callin-panel" role="status">
+            <span className="checkout-callin-icon" aria-hidden>
+              📞
+            </span>
+            <div>
+              <p className="checkout-callin-panel-title">{t("checkout.callIn")}</p>
+              <p className="checkout-callin-panel-desc">{t("checkout.callInDesc")}</p>
+            </div>
+          </div>
         )}
 
         {busy ? (
-          <p className="checkout-processing">{t("payment.processing")}</p>
+          <p className="checkout-processing">{t("checkout.saving")}</p>
         ) : null}
 
         <div className="dd-modal-footer checkout-footer">
@@ -230,18 +190,14 @@ export function CheckoutModal({
           <button
             type="button"
             className="btn btn-brand"
-            disabled={busy || (step === "payment" && !payAtPickup && splitInvalid)}
+            disabled={busy || (!payAtPickup && splitInvalid)}
             onClick={handlePrimary}
           >
             {busy
-              ? t("payment.processing")
-              : step === "split-cash"
-                ? t("payment.confirmCash")
-                : mode === "place" && payAtPickup
-                  ? t("payment.callInPlaceOrder")
-                  : mode === "collect"
-                    ? t("payment.collect")
-                    : t("placeOrder.placeOrder")}
+              ? t("checkout.saving")
+              : mode === "place" && payAtPickup
+                ? t("checkout.callInPlaceOrder")
+                : t("checkout.confirmPaid")}
           </button>
         </div>
       </div>

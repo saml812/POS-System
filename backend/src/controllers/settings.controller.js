@@ -12,14 +12,9 @@ export const updateTicketReset = asyncHandler(async (req, res) => {
   res.json({ settings });
 });
 
-export const updatePaymentSettings = asyncHandler(async (req, res) => {
-  const settings = await settingsService.updatePayment(req.body ?? {});
+export const updateReceiptSettings = asyncHandler(async (req, res) => {
+  const settings = await settingsService.updateReceipt(req.body ?? {});
   res.json({ settings });
-});
-
-export const testTerminal = asyncHandler(async (req, res) => {
-  const result = await settingsService.testTerminal();
-  res.json(result);
 });
 
 export const testReceiptPrinter = asyncHandler(async (req, res) => {

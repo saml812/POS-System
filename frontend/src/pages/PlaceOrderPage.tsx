@@ -2,22 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getMenu } from "../api/menu";
 import {
   cancelOrder,
-  collectPayment,
-  confirmOrderCash,
+  confirmPaid,
   createOrder,
   getActiveOrders,
+  reprintReceipt,
   refundOrder,
-  retryPayment,
-  voidCardPortion,
 } from "../api/orders";
 import { AddToCartModal, type CartItemDraft } from "../components/AddToCartModal";
 import { CancelOrderForm } from "../components/CancelOrderForm";
 import { OrderCard } from "../components/OrderCard";
 import { CartPanel } from "../components/place-order/CartPanel";
-import {
-  CheckoutModal,
-  type CheckoutStep,
-} from "../components/place-order/CheckoutModal";
+import { CheckoutModal } from "../components/place-order/CheckoutModal";
 import { MenuItemCard } from "../components/place-order/MenuItemCard";
 import {
   MobileCartBar,
@@ -30,14 +25,14 @@ import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useCart, type ResolvedCartLine } from "../hooks/useCart";
 import { useOrderSocket } from "../hooks/useOrderSocket";
 import { canPlaceOrders, isManager } from "../lib/permissions";
-import type { Category, MenuItem, Order, PaymentPayload } from "../types";
+import type { Category, MenuItem, Order, TenderPayload } from "../types";
 import {
   applyRefundableOrderEvent,
   applyStaffOrderEvent,
   canRefundOrder,
-  isSplitAwaitingCash,
+  isOrderPaid,
   mergeOrderLists,
-  needsCollectPayment,
+  needsConfirmPaid,
   orderTotal,
 } from "../utils/order";
 
@@ -66,7 +61,6 @@ export function PlaceOrderPage() {
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMode, setCheckoutMode] = useState<"place" | "collect">("place");
-  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>("payment");
   const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
 
   const menuItems = useMemo(
@@ -83,7 +77,7 @@ export function PlaceOrderPage() {
     if (!canPlace) return;
 
     const [unpaidData, pendingData, completedData] = await Promise.all([
-      getActiveOrders({ needsPayment: true }),
+      getActiveOrders({ awaitingPaid: true }),
       getActiveOrders({ status: "PENDING" }),
       manager ? getActiveOrders({ status: "COMPLETED" }) : Promise.resolve({ orders: [] }),
     ]);
@@ -208,14 +202,12 @@ export function PlaceOrderPage() {
     if (busy) return;
     setCheckoutOpen(false);
     setCheckoutOrder(null);
-    setCheckoutStep("payment");
     setCheckoutMode("place");
   }
 
   function openPlaceCheckout() {
     if (cart.lines.length === 0) return;
     setCheckoutMode("place");
-    setCheckoutStep("payment");
     setCheckoutOrder(null);
     setCheckoutOpen(true);
   }
@@ -223,7 +215,6 @@ export function PlaceOrderPage() {
   function openOrderCheckout(order: Order) {
     setCheckoutMode("collect");
     setCheckoutOrder(order);
-    setCheckoutStep(isSplitAwaitingCash(order) ? "split-cash" : "payment");
     setCheckoutOpen(true);
   }
 
@@ -240,26 +231,16 @@ export function PlaceOrderPage() {
     );
   }
 
-  async function handlePlaceWalkIn(payment: PaymentPayload) {
+  async function handlePlaceWalkIn(tender: TenderPayload) {
     await run(async () => {
       const { order } = await createOrder({
         items: cartItemsPayload(),
-        payment,
+        tender,
       });
 
-      if (isSplitAwaitingCash(order)) {
-        setCheckoutOrder(order);
-        setCheckoutStep("split-cash");
-        setCheckoutMode("place");
-        setCheckoutOpen(true);
-      } else {
-        closeCheckout();
-        cart.clear();
-        setSuccess(
-          t("placeOrder.paidSent", { num: order.ticketNumber }),
-        );
-      }
-
+      closeCheckout();
+      cart.clear();
+      setSuccess(t("placeOrder.paidSent", { num: order.ticketNumber }));
       await loadOrderLists();
     });
   }
@@ -279,58 +260,21 @@ export function PlaceOrderPage() {
     );
   }
 
-  async function handleCollect(payment: PaymentPayload) {
+  async function handleConfirmPaid(tender: TenderPayload) {
     if (!checkoutOrder) return;
 
     await run(async () => {
-      const action =
-        checkoutOrder.paymentStatus === "FAILED" ? retryPayment : collectPayment;
-      const { order } = await action(checkoutOrder.id, payment);
-
-      if (isSplitAwaitingCash(order)) {
-        setCheckoutOrder(order);
-        setCheckoutStep("split-cash");
-      } else {
-        closeCheckout();
-        setSuccess(t("payment.collected"));
-      }
-
-      await loadOrderLists();
-    });
-  }
-
-  async function handleConfirmSplitCash() {
-    const orderId = checkoutOrder?.id;
-    if (!orderId) return;
-
-    await run(async () => {
-      const { order } = await confirmOrderCash(orderId);
+      await confirmPaid(checkoutOrder.id, tender);
       closeCheckout();
-      cart.clear();
-
-      if (checkoutMode === "place") {
-        setSuccess(
-          t("placeOrder.paidSent", { num: order.ticketNumber }),
-        );
-      } else {
-        setSuccess(t("payment.collected"));
-      }
-
+      setSuccess(t("checkout.confirmed"));
       await loadOrderLists();
     });
   }
 
-  async function handleVoidCard() {
-    const orderId = checkoutOrder?.id;
-    if (!orderId) return;
-
+  async function handleReprintReceipt(orderId: string) {
     await run(
-      async () => {
-        await voidCardPortion(orderId);
-        closeCheckout();
-        await loadOrderLists();
-      },
-      { successMessage: t("payment.voidCardSuccess") },
+      () => reprintReceipt(orderId),
+      { successMessage: t("checkout.reprintSuccess") },
     );
   }
 
@@ -338,7 +282,7 @@ export function PlaceOrderPage() {
     await run(
       () => refundOrder(orderId),
       {
-        successMessage: t("payment.refundSuccess"),
+        successMessage: t("checkout.refundSuccess"),
         onAfter: loadOrderLists,
       },
     );
@@ -503,18 +447,11 @@ export function PlaceOrderPage() {
         total={checkoutTotal}
         ticketNumber={checkoutOrder?.ticketNumber}
         mode={checkoutMode}
-        step={checkoutStep}
-        splitCardAmount={checkoutOrder?.cardAmount ?? 0}
-        splitCashAmount={checkoutOrder?.cashAmount ?? 0}
         busy={busy}
         onClose={closeCheckout}
         onPlaceWalkIn={handlePlaceWalkIn}
         onPlaceCallIn={handlePlaceCallIn}
-        onCollect={handleCollect}
-        onConfirmSplitCash={handleConfirmSplitCash}
-        onVoidCard={
-          checkoutStep === "split-cash" && checkoutOrder ? handleVoidCard : undefined
-        }
+        onConfirmPaid={handleConfirmPaid}
       />
 
       {canPlace && staffOrders.length > 0 && (
@@ -528,36 +465,24 @@ export function PlaceOrderPage() {
                 order={order}
                 actions={
                   <div className="ft-ticket-action-row">
-                    {needsCollectPayment(order) ? (
+                    {needsConfirmPaid(order) ? (
                       <button
                         type="button"
                         className="btn btn-brand btn-small"
                         disabled={busy}
                         onClick={() => openOrderCheckout(order)}
                       >
-                        {order.paymentStatus === "FAILED"
-                          ? t("payment.retry")
-                          : isSplitAwaitingCash(order)
-                            ? t("payment.confirmCash")
-                            : t("payment.collect")}
+                        {t("checkout.confirmPaid")}
                       </button>
                     ) : null}
-                    {isSplitAwaitingCash(order) ? (
+                    {isOrderPaid(order) ? (
                       <button
                         type="button"
-                        className="btn btn-small btn-danger"
+                        className="btn btn-small"
                         disabled={busy}
-                        onClick={() =>
-                          run(
-                            () => voidCardPortion(order.id),
-                            {
-                              successMessage: t("payment.voidCardSuccess"),
-                              onAfter: loadOrderLists,
-                            },
-                          )
-                        }
+                        onClick={() => handleReprintReceipt(order.id)}
                       >
-                        {t("payment.voidCard")}
+                        {t("checkout.reprintReceipt")}
                       </button>
                     ) : null}
                     {order.status === "PENDING" ? (
@@ -604,7 +529,7 @@ export function PlaceOrderPage() {
                     disabled={busy}
                     onClick={() => handleRefund(order.id)}
                   >
-                    {t("payment.refund")}
+                    {t("checkout.refund")}
                   </button>
                 }
               />

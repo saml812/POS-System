@@ -20,20 +20,19 @@ export function SettingsPage() {
   const [timezone, setTimezone] = useState("");
   const [resetHour, setResetHour] = useState("0");
 
-  const [terminalIp, setTerminalIp] = useState("");
-  const [merchantId, setMerchantId] = useState("");
-  const [operationMode, setOperationMode] = useState("CERT");
+  const [printerType, setPrinterType] = useState("network");
+  const [printerIp, setPrinterIp] = useState("");
+  const [printerPort, setPrinterPort] = useState("9100");
   const [storeName, setStoreName] = useState("POS");
 
   const applySettings = useCallback((next: Settings) => {
     setSettings(next);
     setTimezone(next.ticketReset.timezone ?? "");
     setResetHour(String(next.ticketReset.resetHour));
-
-    setTerminalIp(next.payment.terminal.ip ?? "");
-    setMerchantId(next.payment.terminal.merchantId ?? "");
-    setOperationMode(next.payment.terminal.operationMode);
-    setStoreName(next.payment.receipt.storeName);
+    setPrinterType(next.receipt.printerType);
+    setPrinterIp(next.receipt.printerIp ?? "");
+    setPrinterPort(String(next.receipt.printerPort));
+    setStoreName(next.receipt.storeName);
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -43,7 +42,7 @@ export function SettingsPage() {
 
   const { loading, error } = useGuardedLoad(manager, loadSettings);
   const { success, busy, run } = useAsyncAction(t("common.requestFailed"));
-  const paymentAction = useAsyncAction(t("settings.paymentSaveFailed"));
+  const receiptAction = useAsyncAction(t("settings.receiptSaveFailed"));
 
   useEffect(() => {
     if (!manager) return;
@@ -79,40 +78,33 @@ export function SettingsPage() {
     );
   }
 
-  async function handlePaymentSubmit(event: FormEvent) {
+  async function handleReceiptSubmit(event: FormEvent) {
     event.preventDefault();
 
-    await paymentAction.run(
+    await receiptAction.run(
       async () => {
-        const result = await settingsApi.updatePaymentSettings({
-          terminalIp: terminalIp.trim(),
-          merchantId: merchantId.trim(),
-          operationMode,
+        const result = await settingsApi.updateReceiptSettings({
+          printerType,
+          printerIp: printerIp.trim(),
+          printerPort: Number(printerPort),
           storeName: storeName.trim(),
         });
         applySettings(result.settings);
       },
-      { successMessage: t("settings.paymentSaved") },
-    );
-  }
-
-  async function handleTestTerminal() {
-    await paymentAction.run(
-      () => settingsApi.testPaymentTerminal(),
-      { successMessage: t("settings.terminalTestOk") },
+      { successMessage: t("settings.receiptSaved") },
     );
   }
 
   async function handleTestReceipt() {
-    await paymentAction.run(
+    await receiptAction.run(
       () => settingsApi.testReceiptPrinter(),
       { successMessage: t("settings.receiptTestOk") },
     );
   }
 
-  const displayError = error || paymentAction.error;
-  const displaySuccess = success || paymentAction.success;
-  const paymentBusy = paymentAction.busy;
+  const displayError = error || receiptAction.error;
+  const displaySuccess = success || receiptAction.success;
+  const receiptBusy = receiptAction.busy;
 
   return (
     <div className="page em-page settings-page">
@@ -197,74 +189,52 @@ export function SettingsPage() {
           </section>
 
           <section className="em-form-panel">
-            <h3>{t("settings.paymentTitle")}</h3>
-            <p className="muted">{t("settings.paymentDesc")}</p>
+            <h3>{t("settings.receiptTitle")}</h3>
+            <p className="muted">{t("settings.receiptDesc")}</p>
 
-            <form className="em-form" onSubmit={handlePaymentSubmit}>
-              <h4 className="settings-subheading">{t("settings.terminalTitle")}</h4>
+            <form className="em-form" onSubmit={handleReceiptSubmit}>
               <div className="em-form-grid">
                 <label className="em-field">
-                  <span className="em-field-label">{t("settings.terminalIp")}</span>
-                  <input
-                    className="em-input"
-                    value={terminalIp}
-                    onChange={(e) => setTerminalIp(e.target.value)}
-                    placeholder="192.168.1.50"
-                    disabled={paymentBusy}
-                  />
-                  <span className="settings-hint muted">
-                    {t("settings.terminalHttpsNote")}
-                  </span>
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.merchantId")}</span>
-                  <input
-                    className="em-input"
-                    value={merchantId}
-                    onChange={(e) => setMerchantId(e.target.value)}
-                    disabled={paymentBusy}
-                  />
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.operationMode")}</span>
+                  <span className="em-field-label">{t("settings.printerType")}</span>
                   <select
                     className="em-input"
-                    value={operationMode}
-                    onChange={(e) => setOperationMode(e.target.value)}
-                    disabled={paymentBusy}
+                    value={printerType}
+                    onChange={(e) => setPrinterType(e.target.value)}
+                    disabled={receiptBusy}
                   >
-                    <option value="CERT">{t("settings.modeCert")}</option>
-                    <option value="PROD">{t("settings.modeProd")}</option>
+                    <option value="network">{t("settings.printerNetwork")}</option>
+                    <option value="none">{t("settings.printerNone")}</option>
                   </select>
                 </label>
-              </div>
-
-              <div className="settings-test-row">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={paymentBusy}
-                  onClick={() => handleTestTerminal()}
-                >
-                  {t("settings.testTerminal")}
-                </button>
-                <span className="muted">
-                  {settings.payment.terminal.configured
-                    ? t("settings.terminalConfigured")
-                    : t("settings.terminalNotConfigured")}
-                </span>
-              </div>
-
-              <h4 className="settings-subheading">{t("settings.receiptTitle")}</h4>
-              <p className="muted settings-hint">{t("settings.receiptDesc")}</p>
-              <div className="em-form-grid">
+                <label className="em-field">
+                  <span className="em-field-label">{t("settings.printerIp")}</span>
+                  <input
+                    className="em-input"
+                    value={printerIp}
+                    onChange={(e) => setPrinterIp(e.target.value)}
+                    placeholder="192.168.1.60"
+                    disabled={receiptBusy || printerType === "none"}
+                  />
+                </label>
+                <label className="em-field">
+                  <span className="em-field-label">{t("settings.printerPort")}</span>
+                  <input
+                    className="em-input"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={printerPort}
+                    onChange={(e) => setPrinterPort(e.target.value)}
+                    disabled={receiptBusy || printerType === "none"}
+                  />
+                </label>
                 <label className="em-field">
                   <span className="em-field-label">{t("settings.storeName")}</span>
                   <input
                     className="em-input"
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
-                    disabled={paymentBusy}
+                    disabled={receiptBusy}
                   />
                 </label>
               </div>
@@ -273,15 +243,13 @@ export function SettingsPage() {
                 <button
                   type="button"
                   className="btn"
-                  disabled={
-                    paymentBusy || !settings.payment.terminal.configured
-                  }
+                  disabled={receiptBusy || printerType === "none"}
                   onClick={() => handleTestReceipt()}
                 >
                   {t("settings.testReceipt")}
                 </button>
                 <span className="muted">
-                  {settings.payment.receipt.configured
+                  {settings.receipt.configured
                     ? t("settings.receiptConfigured")
                     : t("settings.receiptNotConfigured")}
                 </span>
@@ -291,9 +259,9 @@ export function SettingsPage() {
                 <button
                   type="submit"
                   className="btn btn-brand"
-                  disabled={paymentBusy}
+                  disabled={receiptBusy}
                 >
-                  {paymentBusy ? t("common.saving") : t("common.save")}
+                  {receiptBusy ? t("common.saving") : t("common.save")}
                 </button>
               </div>
             </form>

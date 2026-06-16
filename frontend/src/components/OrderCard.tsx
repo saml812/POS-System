@@ -6,10 +6,9 @@ import {
   formatMoney,
   formatOptionNames,
   formatTime,
-  isSplitAwaitingCash,
   orderStatusLabel,
   orderTotal,
-  paymentStatusLabel,
+  paidStatusLabel,
 } from "../utils/order";
 
 type OrderCardProps = {
@@ -22,11 +21,11 @@ export function OrderCard({ order, actions, meta }: OrderCardProps) {
   const { locale, t } = useLocale();
   const total = orderTotal(order);
   const statusClass = order.status.toLowerCase();
-  const paymentBadgeClass = order.paymentStatus.toLowerCase();
-  const showPaymentBadge =
+  const paidBadgeClass = order.paidStatus.toLowerCase();
+  const showPaidBadge =
     order.payAtPickup ||
-    order.paymentStatus !== "AUTHORIZED" ||
-    order.paymentMethod != null;
+    order.paidStatus !== "PAID" ||
+    order.tenderType != null;
 
   return (
     <article className={`ft-ticket status-${statusClass}`}>
@@ -46,30 +45,17 @@ export function OrderCard({ order, actions, meta }: OrderCardProps) {
           <span className={`ft-status-pill status-${statusClass}`}>
             {orderStatusLabel(order.status, t)}
           </span>
-          {showPaymentBadge ? (
+          {showPaidBadge ? (
             <span
-              className={`ft-payment-pill payment-${paymentBadgeClass} ${order.payAtPickup ? "call-in" : ""}`}
+              className={`ft-paid-pill paid-${paidBadgeClass} ${order.payAtPickup ? "call-in" : ""}`}
             >
-              {paymentStatusLabel(order, t)}
+              {paidStatusLabel(order, t)}
             </span>
           ) : null}
         </div>
       </header>
 
       {meta ? <div className="ft-ticket-extra">{meta}</div> : null}
-
-      {order.paymentError ? (
-        <p className="ft-payment-error">{order.paymentError}</p>
-      ) : null}
-
-      {isSplitAwaitingCash(order) ? (
-        <p className="ft-payment-split muted">
-          {t("payment.splitSummary", {
-            card: formatMoney(order.cardAmount ?? 0),
-            cash: formatMoney(order.cashAmount ?? 0),
-          })}
-        </p>
-      ) : null}
 
       <ul className="ft-ticket-items">
         {order.items.map((item) => (

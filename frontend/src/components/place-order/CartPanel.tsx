@@ -1,30 +1,18 @@
 import { useLocale } from "../../context/LocaleContext";
-import type { MenuItem, MenuItemOption, MenuItemSize } from "../../types";
+import type { ResolvedCartLine } from "../../hooks/useCart";
 import {
   formatItemLabel,
   formatMoney,
   formatOptionNames,
 } from "../../utils/order";
 
-export type CartLineView = {
-  key: string;
-  item: MenuItem;
-  optionIds: string[];
-  sizeId: string | null;
-  selectedOptions: MenuItemOption[];
-  selectedSize?: MenuItemSize | null;
-  preferences?: string;
-  unitPrice: number;
-  quantity: number;
-};
-
 type CartPanelProps = {
-  lines: CartLineView[];
+  lines: ResolvedCartLine[];
   total: number;
   canPlace: boolean;
   submitting: boolean;
   onChangeQuantity: (key: string, delta: number) => void;
-  onEdit: (line: CartLineView) => void;
+  onEdit: (line: ResolvedCartLine) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
   className?: string;

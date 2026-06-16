@@ -56,18 +56,12 @@ export type OrderStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export type PaymentMethod = "CASH" | "CARD" | "SPLIT";
+export type TenderType = "CASH" | "CARD" | "SPLIT";
 
-export type PaymentStatus =
-  | "UNPAID"
-  | "PROCESSING"
-  | "AUTHORIZED"
-  | "FAILED"
-  | "VOIDED"
-  | "REFUNDED";
+export type PaidStatus = "UNPAID" | "PAID" | "REFUNDED";
 
-export type PaymentPayload = {
-  method: PaymentMethod;
+export type TenderPayload = {
+  method: TenderType;
   cardAmount?: number;
 };
 
@@ -102,12 +96,10 @@ export type Order = {
   status: OrderStatus;
   previousStatus: OrderStatus | null;
   payAtPickup: boolean;
-  paymentMethod: PaymentMethod | null;
-  paymentStatus: PaymentStatus;
+  tenderType: TenderType | null;
+  paidStatus: PaidStatus;
   cardAmount: number | null;
   cashAmount: number | null;
-  paymentAuthCode: string | null;
-  paymentError: string | null;
   cancelReason: string | null;
   cancelledAt: string | null;
   cancelledBy: OrderUser | null;

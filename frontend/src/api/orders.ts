@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { Order, PaymentPayload } from "../types";
+import type { Order, TenderPayload } from "../types";
 
 export type CreateOrderItem = {
   menuItemId: string;
@@ -12,7 +12,7 @@ export type CreateOrderItem = {
 export type CreateOrderBody = {
   items: CreateOrderItem[];
   payAtPickup?: boolean;
-  payment?: PaymentPayload;
+  tender?: TenderPayload;
 };
 
 export function createOrder(body: CreateOrderBody) {
@@ -22,25 +22,18 @@ export function createOrder(body: CreateOrderBody) {
   });
 }
 
-export function collectPayment(orderId: string, payment: PaymentPayload) {
-  return apiRequest<{ order: Order }>(`/orders/${orderId}/collect-payment`, {
+export function confirmPaid(orderId: string, tender: TenderPayload) {
+  return apiRequest<{ order: Order }>(`/orders/${orderId}/confirm-paid`, {
     method: "POST",
-    body: JSON.stringify({ payment }),
+    body: JSON.stringify({ tender }),
   });
 }
 
-export function confirmOrderCash(orderId: string) {
-  return apiRequest<{ order: Order }>(`/orders/${orderId}/confirm-cash`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-}
-
-export function retryPayment(orderId: string, payment: PaymentPayload) {
-  return apiRequest<{ order: Order }>(`/orders/${orderId}/retry-payment`, {
-    method: "POST",
-    body: JSON.stringify({ payment }),
-  });
+export function reprintReceipt(orderId: string) {
+  return apiRequest<{ printed: boolean; order: Order }>(
+    `/orders/${orderId}/reprint-receipt`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
 }
 
 export function refundOrder(orderId: string) {
@@ -60,24 +53,13 @@ export function getCashierFeed() {
 }
 
 export function getActiveOrders(
-  options?: string | { status?: string; needsPayment?: boolean },
+  options?: { status?: string; awaitingPaid?: boolean },
 ) {
   const params = new URLSearchParams();
-  if (typeof options === "string") {
-    params.set("status", options);
-  } else if (options) {
-    if (options.status) params.set("status", options.status);
-    if (options.needsPayment) params.set("needsPayment", "true");
-  }
+  if (options?.status) params.set("status", options.status);
+  if (options?.awaitingPaid) params.set("awaitingPaid", "true");
   const query = params.toString() ? `?${params.toString()}` : "";
   return apiRequest<{ orders: Order[] }>(`/orders/active${query}`);
-}
-
-export function voidCardPortion(orderId: string) {
-  return apiRequest<{ order: Order }>(`/orders/${orderId}/void-card`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
 }
 
 export function startOrder(id: string) {

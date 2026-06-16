@@ -2,8 +2,7 @@ import { Router } from "express";
 import {
   getSettings,
   updateTicketReset,
-  updatePaymentSettings,
-  testTerminal,
+  updateReceiptSettings,
   testReceiptPrinter,
 } from "../controllers/settings.controller.js";
 import { requireAuth, allowRoles } from "../middleware/auth.middleware.js";
@@ -15,8 +14,7 @@ router.use(requireAuth, managerOnly);
 
 router.get("/", getSettings);
 router.patch("/ticket-reset", updateTicketReset);
-router.patch("/payment", updatePaymentSettings);
-router.post("/payment/test-terminal", testTerminal);
-router.post("/payment/test-receipt", testReceiptPrinter);
+router.patch("/receipt", updateReceiptSettings);
+router.post("/receipt/test", testReceiptPrinter);
 
 export default router;

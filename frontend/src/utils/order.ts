@@ -123,38 +123,18 @@ export function applyCashierOrderEvent(orders: Order[], order: Order): Order[] {
   return upsertOrder(orders, order);
 }
 
-/** @deprecated Use applyStaffOrderEvent — kept for explicit pending-list updates */
-export function applyPendingOrderEvent(orders: Order[], order: Order): Order[] {
-  if (order.status !== "PENDING") {
-    return removeOrder(orders, order.id);
-  }
-
-  return upsertOrder(orders, order);
-}
-
 export function isOrderPaid(order: Order) {
-  return order.paymentStatus === "AUTHORIZED";
+  return order.paidStatus === "PAID";
 }
 
-export function isSplitAwaitingCash(order: Order) {
-  return (
-    order.paymentStatus === "UNPAID" &&
-    order.paymentMethod === "SPLIT" &&
-    (order.cardAmount ?? 0) > 0
-  );
-}
-
-export function needsCollectPayment(order: Order) {
-  if (order.paymentStatus === "AUTHORIZED") return false;
-  if (order.paymentStatus === "FAILED") return true;
-  if (order.payAtPickup && order.paymentStatus === "UNPAID") return true;
-  return isSplitAwaitingCash(order);
+export function needsConfirmPaid(order: Order) {
+  return order.payAtPickup && order.paidStatus === "UNPAID";
 }
 
 export function canRefundOrder(order: Order) {
   return (
     order.status === "COMPLETED" &&
-    order.paymentStatus === "AUTHORIZED" &&
+    order.paidStatus === "PAID" &&
     (order.cardAmount ?? 0) > 0
   );
 }
@@ -172,7 +152,7 @@ export function applyStaffOrderEvent(orders: Order[], order: Order): Order[] {
     return removeOrder(orders, order.id);
   }
 
-  if (order.status === "PENDING" || needsCollectPayment(order)) {
+  if (order.status === "PENDING" || needsConfirmPaid(order)) {
     return upsertOrder(orders, order);
   }
 
@@ -187,21 +167,15 @@ export function applyRefundableOrderEvent(orders: Order[], order: Order): Order[
   return upsertOrder(orders, order);
 }
 
-export function paymentStatusLabel(
+export function paidStatusLabel(
   order: Order,
   t: (key: string, vars?: Record<string, string>) => string,
 ) {
-  if (order.payAtPickup && order.paymentStatus === "UNPAID") {
-    return t("payment.badges.callInUnpaid");
+  if (order.payAtPickup && order.paidStatus === "UNPAID") {
+    return t("checkout.badges.callInUnpaid");
   }
-  if (order.paymentStatus === "FAILED") {
-    return t("payment.badges.failed");
+  if (order.paidStatus === "PAID" && order.tenderType) {
+    return t(`checkout.tenders.${order.tenderType}`);
   }
-  if (isSplitAwaitingCash(order)) {
-    return t("payment.badges.splitCash");
-  }
-  if (order.paymentStatus === "AUTHORIZED" && order.paymentMethod) {
-    return t(`payment.methods.${order.paymentMethod}`);
-  }
-  return t(`payment.status.${order.paymentStatus}`);
+  return t(`checkout.status.${order.paidStatus}`);
 }

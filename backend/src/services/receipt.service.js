@@ -1,9 +1,13 @@
-import { getPaymentConfig } from "../lib/paymentConfig.js";
+import net from "node:net";
+import { getReceiptConfig } from "../lib/receiptConfig.js";
 import { appError } from "../lib/appError.js";
-import * as datacap from "./datacap.service.js";
 
-const RECEIPT_WIDTH = 40;
-const MAX_LINES = 80;
+const ESC = "\x1b";
+const INIT = ESC + "@";
+const CUT = ESC + "i";
+const LF = "\n";
+const PRINTER_TIMEOUT_MS = 5000;
+const RECEIPT_WIDTH = 32;
 
 function money(amount) {
   return `$${Number(amount).toFixed(2)}`;
@@ -12,6 +16,10 @@ function money(amount) {
 function truncate(text, max) {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}…`;
+}
+
+function line(text = "") {
+  return `${text}${LF}`;
 }
 
 function center(text, width = RECEIPT_WIDTH) {
@@ -26,11 +34,32 @@ function padLine(left, right, width = RECEIPT_WIDTH) {
   return `${left}${" ".repeat(spaces)}${right}`;
 }
 
-function isTerminalConfigured(config) {
-  return Boolean(config.terminalIp && config.merchantId);
+function sendToPrinter(buffer) {
+  const config = getReceiptConfig();
+
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(
+      { host: config.printerIp, port: config.printerPort },
+      () => {
+        socket.write(buffer, () => {
+          socket.end();
+          resolve({ printed: true });
+        });
+      },
+    );
+
+    socket.setTimeout(PRINTER_TIMEOUT_MS);
+    socket.on("timeout", () => {
+      socket.destroy();
+      reject(appError("Receipt printer timed out", 504));
+    });
+    socket.on("error", (err) => {
+      reject(appError(`Receipt printer error: ${err.message}`, 503));
+    });
+  });
 }
 
-export function buildOrderReceiptLines(order, config = getPaymentConfig()) {
+export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
   const lines = [];
   const storeName = config.storeName || "POS";
 
@@ -71,11 +100,11 @@ export function buildOrderReceiptLines(order, config = getPaymentConfig()) {
   lines.push("-".repeat(RECEIPT_WIDTH));
   lines.push(padLine("Total", money(total)));
 
-  if (order.paymentMethod === "CASH") {
+  if (order.tenderType === "CASH") {
     lines.push("Paid: CASH");
-  } else if (order.paymentMethod === "CARD") {
+  } else if (order.tenderType === "CARD") {
     lines.push("Paid: CARD");
-  } else if (order.paymentMethod === "SPLIT") {
+  } else if (order.tenderType === "SPLIT") {
     lines.push(`Card: ${money(order.cardAmount ?? 0)}`);
     lines.push(`Cash: ${money(order.cashAmount ?? 0)}`);
   }
@@ -83,46 +112,39 @@ export function buildOrderReceiptLines(order, config = getPaymentConfig()) {
   lines.push("");
   lines.push(center("Thank you!"));
 
-  return lines.slice(0, MAX_LINES);
+  return lines;
+}
+
+function buildReceiptBuffer(order, config) {
+  const lines = buildOrderReceiptLines(order, config);
+  return Buffer.from(`${INIT}${lines.map(line).join("")}${CUT}`, "ascii");
 }
 
 export async function printCustomerReceipt(order) {
-  const config = getPaymentConfig();
+  const config = getReceiptConfig();
 
-  if (!isTerminalConfigured(config)) {
+  if (config.printerType === "none" || !config.printerIp) {
     console.info(
-      "[receipt] skipped (terminal not configured) ticket=%s",
+      "[receipt] skipped (not configured) ticket=%s",
       order.ticketNumber,
     );
     return { printed: false, skipped: true };
   }
 
-  const lines = buildOrderReceiptLines(order, config);
-  await datacap.runPrintReceipt({
-    lines,
-    ticketNumber: order.ticketNumber,
-  });
-
-  return { printed: true };
+  const buffer = buildReceiptBuffer(order, config);
+  return sendToPrinter(buffer);
 }
 
 export async function printTestReceipt() {
-  const config = getPaymentConfig();
-
-  if (!isTerminalConfigured(config)) {
-    throw appError("Payment terminal is not configured", 400);
+  const config = getReceiptConfig();
+  if (config.printerType === "none" || !config.printerIp) {
+    throw appError("Receipt printer is not configured", 400);
   }
 
-  const lines = [
-    center(config.storeName || "POS"),
-    "",
-    center("Test receipt"),
-    "",
-    center("Terminal print OK"),
-    "",
-    center("Thank you!"),
-  ];
+  const buffer = Buffer.from(
+    `${INIT}${line(center(config.storeName || "POS"))}${line(center("Test receipt"))}${line("")}${CUT}`,
+    "ascii",
+  );
 
-  await datacap.runPrintReceipt({ lines, ticketNumber: "TEST" });
-  return { printed: true };
+  return sendToPrinter(buffer);
 }

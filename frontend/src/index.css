@@ -3181,7 +3181,7 @@ label.dd-option-row {
   align-items: center;
 }
 
-.ft-payment-pill {
+.ft-paid-pill {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 0.2rem 0.5rem;
@@ -3191,26 +3191,26 @@ label.dd-option-row {
   color: var(--text-muted);
 }
 
-.ft-payment-pill.payment-unpaid,
-.ft-payment-pill.call-in {
+.ft-paid-pill.paid-unpaid,
+.ft-paid-pill.call-in {
   background: #fffbeb;
   border-color: #fcd34d;
   color: #92400e;
 }
 
-.ft-payment-pill.payment-failed {
+.ft-paid-pill.paid-refunded {
   background: #fef2f2;
   border-color: #fecaca;
   color: #b91c1c;
 }
 
-.ft-payment-pill.payment-authorized {
+.ft-paid-pill.paid-paid {
   background: #f0fdf4;
   border-color: #bbf7d0;
   color: #15803d;
 }
 
-.ft-payment-error {
+.ft-checkout-warning {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
   color: #b91c1c;

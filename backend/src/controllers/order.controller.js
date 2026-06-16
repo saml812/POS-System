@@ -9,7 +9,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 export const getActiveOrders = asyncHandler(async (req, res) => {
   const orders = await orderService.getActiveOrders({
     status: req.query.status,
-    needsPayment: req.query.needsPayment === "true",
+    awaitingPaid: req.query.awaitingPaid === "true",
   });
   res.json({ orders });
 });
@@ -48,35 +48,21 @@ export const finishOrder = asyncHandler(async (req, res) => {
   res.json({ order });
 });
 
-export const collectPayment = asyncHandler(async (req, res) => {
-  const order = await orderService.collectPayment(
+export const confirmPaid = asyncHandler(async (req, res) => {
+  const order = await orderService.confirmPaid(
     req.params.id,
     req.user,
-    req.body?.payment ?? req.body,
+    req.body?.tender ?? req.body,
   );
   res.json({ order });
 });
 
-export const confirmOrderCash = asyncHandler(async (req, res) => {
-  const order = await orderService.confirmOrderCash(req.params.id, req.user);
-  res.json({ order });
-});
-
-export const retryPayment = asyncHandler(async (req, res) => {
-  const order = await orderService.retryPayment(
-    req.params.id,
-    req.user,
-    req.body?.payment ?? req.body,
-  );
-  res.json({ order });
+export const reprintReceipt = asyncHandler(async (req, res) => {
+  const result = await orderService.reprintReceipt(req.params.id);
+  res.json(result);
 });
 
 export const refundOrder = asyncHandler(async (req, res) => {
   const order = await orderService.refundOrder(req.params.id, req.user);
-  res.json({ order });
-});
-
-export const voidCardPortion = asyncHandler(async (req, res) => {
-  const order = await orderService.voidCardPortion(req.params.id, req.user);
   res.json({ order });
 });

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { completeOrder, getCashierFeed } from "../api/orders";
+import { completeOrder, getCashierFeed, reprintReceipt } from "../api/orders";
 import { FeedHero } from "../components/feed/FeedHero";
 import { OrderCard } from "../components/OrderCard";
 import { CheckoutModal } from "../components/place-order/CheckoutModal";
@@ -15,7 +15,7 @@ import {
   applyCashierOrderEvent,
   formatTime,
   isOrderPaid,
-  needsCollectPayment,
+  needsConfirmPaid,
   orderTotal,
 } from "../utils/order";
 
@@ -97,7 +97,7 @@ export function CashierFeedPage() {
           {orders.map((order) => {
             const paid = isOrderPaid(order);
             const isBusy = busy && actionId === order.id;
-            const canCollect = needsCollectPayment(order) && order.payAtPickup;
+            const canConfirm = needsConfirmPaid(order) && order.payAtPickup;
 
             return (
               <OrderCard
@@ -119,34 +119,49 @@ export function CashierFeedPage() {
                 }
                 actions={
                   <div className="ft-action-stack">
-                    {!paid && canCollect ? (
+                    {!paid && canConfirm ? (
                       <button
                         type="button"
                         className="btn btn-brand ft-action-primary"
                         disabled={isBusy || checkout.busy}
                         onClick={() => checkout.openForOrder(order)}
                       >
-                        {t("payment.collect")}
+                        {t("checkout.confirmPaid")}
                       </button>
                     ) : !paid ? (
-                      <p className="ft-payment-error muted">
+                      <p className="ft-checkout-warning muted">
                         {t("cashier.unpaidWarning")}
                       </p>
                     ) : (
-                      <button
-                        type="button"
-                        className="btn btn-brand ft-action-primary"
-                        disabled={isBusy || checkout.busy}
-                        onClick={() =>
-                          run(() => completeOrder(order.id), {
-                            busyId: order.id,
-                            successMessage: t("cashier.completeSuccess"),
-                            onAfter: reload,
-                          })
-                        }
-                      >
-                        {isBusy ? t("cashier.completing") : t("cashier.complete")}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="btn ft-action-primary"
+                          disabled={isBusy || checkout.busy}
+                          onClick={() =>
+                            run(() => reprintReceipt(order.id), {
+                              busyId: order.id,
+                              successMessage: t("checkout.reprintSuccess"),
+                            })
+                          }
+                        >
+                          {t("checkout.reprintReceipt")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-brand ft-action-primary"
+                          disabled={isBusy || checkout.busy}
+                          onClick={() =>
+                            run(() => completeOrder(order.id), {
+                              busyId: order.id,
+                              successMessage: t("cashier.completeSuccess"),
+                              onAfter: reload,
+                            })
+                          }
+                        >
+                          {isBusy ? t("cashier.completing") : t("cashier.complete")}
+                        </button>
+                      </>
                     )}
                   </div>
                 }
@@ -161,20 +176,11 @@ export function CashierFeedPage() {
         total={checkout.order ? orderTotal(checkout.order) : 0}
         ticketNumber={checkout.order?.ticketNumber}
         mode="collect"
-        step={checkout.step}
-        splitCardAmount={checkout.order?.cardAmount ?? 0}
-        splitCashAmount={checkout.order?.cashAmount ?? 0}
         busy={checkout.busy}
         onClose={checkout.close}
         onPlaceWalkIn={() => undefined}
         onPlaceCallIn={() => undefined}
-        onCollect={checkout.handleCollect}
-        onConfirmSplitCash={checkout.handleConfirmSplitCash}
-        onVoidCard={
-          checkout.step === "split-cash" && checkout.order
-            ? checkout.handleVoidCard
-            : undefined
-        }
+        onConfirmPaid={checkout.handleConfirmPaid}
       />
     </div>
   );

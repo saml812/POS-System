@@ -1,15 +1,13 @@
 import { appError } from "../lib/appError.js";
-import { withTerminalLock } from "../lib/terminalMutex.js";
 import {
   getPublicSettings,
   updateTicketResetSettings,
 } from "../lib/tickets.js";
 import {
-  refreshPaymentConfig,
-  toPublicPaymentSettings,
-  updatePaymentSettings,
-} from "../lib/paymentConfig.js";
-import * as datacap from "../services/datacap.service.js";
+  refreshReceiptConfig,
+  toPublicReceiptSettings,
+  updateReceiptSettings,
+} from "../lib/receiptConfig.js";
 import { printTestReceipt } from "../services/receipt.service.js";
 
 async function withAppError(action) {
@@ -22,12 +20,12 @@ async function withAppError(action) {
 }
 
 export async function getSettings() {
-  await refreshPaymentConfig();
+  await refreshReceiptConfig();
   const ticket = await getPublicSettings();
 
   return {
     ...ticket,
-    payment: toPublicPaymentSettings(),
+    receipt: toPublicReceiptSettings(),
   };
 }
 
@@ -36,17 +34,11 @@ export async function updateTicketReset(input) {
   return getSettings();
 }
 
-export async function updatePayment(input) {
-  await withAppError(() => updatePaymentSettings(input));
+export async function updateReceipt(input) {
+  await withAppError(() => updateReceiptSettings(input));
   return getSettings();
 }
 
-export async function testTerminal() {
-  return withAppError(() => datacap.testTerminalConnection());
-}
-
 export async function testReceiptPrinter() {
-  return withAppError(() =>
-    withTerminalLock(() => printTestReceipt()),
-  );
+  return withAppError(() => printTestReceipt());
 }

@@ -14,7 +14,7 @@ import kitchenRoutes from "./routes/kitchen.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import { refreshTicketResetConfig } from "./lib/tickets.js";
-import { refreshPaymentConfig } from "./lib/paymentConfig.js";
+import { refreshReceiptConfig } from "./lib/receiptConfig.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -56,7 +56,7 @@ initSocket(httpServer);
 const server = httpServer.listen(PORT, async () => {
   await connectDB();
   await refreshTicketResetConfig();
-  await refreshPaymentConfig();
+  await refreshReceiptConfig();
   console.log(`API running on http://localhost:${PORT}`);
 });
 
