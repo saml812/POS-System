@@ -9,6 +9,11 @@ export function connectSocket(): Socket {
     socket = io(SOCKET_URL, {
       withCredentials: true,
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
   } else if (!socket.connected) {
     socket.connect();

@@ -8,6 +8,8 @@ export function initSocket(httpServer) {
     cors: {
       origin: getClientOrigins(),
       credentials: true,
+      pingInterval: 25000,
+      pingTimeout: 20000,
     },
   });
 
