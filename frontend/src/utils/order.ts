@@ -131,12 +131,8 @@ export function needsConfirmPaid(order: Order) {
   return order.payAtPickup && order.paidStatus === "UNPAID";
 }
 
-export function canRefundOrder(order: Order) {
-  return (
-    order.status === "COMPLETED" &&
-    order.paidStatus === "PAID" &&
-    (order.cardAmount ?? 0) > 0
-  );
+export function canRecordRefund(order: Order) {
+  return order.status === "COMPLETED" && order.paidStatus === "PAID";
 }
 
 export function mergeOrderLists(orders: Order[]): Order[] {
@@ -159,14 +155,6 @@ export function applyStaffOrderEvent(orders: Order[], order: Order): Order[] {
   return removeOrder(orders, order.id);
 }
 
-export function applyRefundableOrderEvent(orders: Order[], order: Order): Order[] {
-  if (!canRefundOrder(order)) {
-    return removeOrder(orders, order.id);
-  }
-
-  return upsertOrder(orders, order);
-}
-
 export function paidStatusLabel(
   order: Order,
   t: (key: string, vars?: Record<string, string>) => string,
@@ -176,6 +164,9 @@ export function paidStatusLabel(
   }
   if (order.paidStatus === "PAID" && order.tenderType) {
     return t(`checkout.tenders.${order.tenderType}`);
+  }
+  if (order.paidStatus === "REFUNDED" && order.refundTenderType) {
+    return t(`checkout.tenders.${order.refundTenderType}`);
   }
   return t(`checkout.status.${order.paidStatus}`);
 }

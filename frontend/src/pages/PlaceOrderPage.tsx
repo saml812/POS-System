@@ -6,7 +6,6 @@ import {
   createOrder,
   getActiveOrders,
   reprintReceipt,
-  refundOrder,
 } from "../api/orders";
 import { AddToCartModal, type CartItemDraft } from "../components/AddToCartModal";
 import { CancelOrderForm } from "../components/CancelOrderForm";
@@ -24,12 +23,10 @@ import { useLocale } from "../context/LocaleContext";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useCart, type ResolvedCartLine } from "../hooks/useCart";
 import { useOrderSocket } from "../hooks/useOrderSocket";
-import { canPlaceOrders, isManager } from "../lib/permissions";
+import { canPlaceOrders } from "../lib/permissions";
 import type { Category, MenuItem, Order, TenderPayload } from "../types";
 import {
-  applyRefundableOrderEvent,
   applyStaffOrderEvent,
-  canRefundOrder,
   isOrderPaid,
   mergeOrderLists,
   needsConfirmPaid,
@@ -47,7 +44,6 @@ export function PlaceOrderPage() {
   const { user } = useAuth();
   const { t } = useLocale();
   const canPlace = canPlaceOrders(user);
-  const manager = isManager(user);
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [cartModal, setCartModal] = useState<CartModalState>(null);
@@ -56,7 +52,6 @@ export function PlaceOrderPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [staffOrders, setStaffOrders] = useState<Order[]>([]);
-  const [refundableOrders, setRefundableOrders] = useState<Order[]>([]);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -76,22 +71,15 @@ export function PlaceOrderPage() {
   const loadOrderLists = useCallback(async () => {
     if (!canPlace) return;
 
-    const [unpaidData, pendingData, completedData] = await Promise.all([
+    const [unpaidData, pendingData] = await Promise.all([
       getActiveOrders({ awaitingPaid: true }),
       getActiveOrders({ status: "PENDING" }),
-      manager ? getActiveOrders({ status: "COMPLETED" }) : Promise.resolve({ orders: [] }),
     ]);
 
     setStaffOrders(
       mergeOrderLists([...unpaidData.orders, ...pendingData.orders]),
     );
-
-    if (manager) {
-      setRefundableOrders(
-        completedData.orders.filter((order) => canRefundOrder(order)),
-      );
-    }
-  }, [canPlace, manager]);
+  }, [canPlace]);
 
   useEffect(() => {
     let active = true;
@@ -125,11 +113,6 @@ export function PlaceOrderPage() {
     enabled: canPlace,
     onOrder: (_event, order) => {
       setStaffOrders((current) => applyStaffOrderEvent(current, order));
-      if (manager) {
-        setRefundableOrders((current) =>
-          applyRefundableOrderEvent(current, order),
-        );
-      }
     },
   });
 
@@ -275,16 +258,6 @@ export function PlaceOrderPage() {
     await run(
       () => reprintReceipt(orderId),
       { successMessage: t("checkout.reprintSuccess") },
-    );
-  }
-
-  async function handleRefund(orderId: string) {
-    await run(
-      () => refundOrder(orderId),
-      {
-        successMessage: t("checkout.refundSuccess"),
-        onAfter: loadOrderLists,
-      },
     );
   }
 
@@ -506,31 +479,6 @@ export function PlaceOrderPage() {
                       )
                     ) : null}
                   </div>
-                }
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {manager && refundableOrders.length > 0 && (
-        <section className="dd-secondary-section">
-          <h3>{t("placeOrder.refundTitle")}</h3>
-          <p className="muted">{t("placeOrder.refundDesc")}</p>
-          <div className="order-feed">
-            {refundableOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                actions={
-                  <button
-                    type="button"
-                    className="btn btn-small btn-danger"
-                    disabled={busy}
-                    onClick={() => handleRefund(order.id)}
-                  >
-                    {t("checkout.refund")}
-                  </button>
                 }
               />
             ))}

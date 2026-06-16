@@ -14,6 +14,11 @@ export const getActiveOrders = asyncHandler(async (req, res) => {
   res.json({ orders });
 });
 
+export const getOrderByTicket = asyncHandler(async (req, res) => {
+  const order = await orderService.getOrderByTicket(req.params.ticketNumber);
+  res.json({ order });
+});
+
 export const getKitchenFeed = asyncHandler(async (req, res) => {
   const orders = await orderService.getKitchenFeed({
     includeVoided: req.query.includeVoided === "true",
@@ -62,7 +67,11 @@ export const reprintReceipt = asyncHandler(async (req, res) => {
   res.json(result);
 });
 
-export const refundOrder = asyncHandler(async (req, res) => {
-  const order = await orderService.refundOrder(req.params.id, req.user);
+export const recordRefund = asyncHandler(async (req, res) => {
+  const order = await orderService.recordRefund(
+    req.params.id,
+    req.user,
+    req.body?.refund ?? req.body,
+  );
   res.json({ order });
 });

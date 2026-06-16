@@ -22,14 +22,12 @@ enum OrderStatus {
   CANCELLED
 }
 
-/// How the cashier recorded the customer paid (manual attestation, not processor integration).
 enum TenderType {
   CASH
   CARD
   SPLIT
 }
 
-/// Whether the cashier has confirmed the order is paid.
 enum PaidStatus {
   UNPAID
   PAID
@@ -48,6 +46,7 @@ model User {
   ordersCancelled Order[]          @relation("OrderCancelledBy")
   ordersFinished  Order[]          @relation("OrderFinishedBy")
   ordersCompleted Order[]          @relation("OrderCompletedBy")
+  ordersRefunded  Order[]          @relation("OrderRefundedBy")
   orderStatusLogs OrderStatusLog[]
 }
 
@@ -126,9 +125,15 @@ model Order {
   payAtPickup    Boolean          @default(false)
   tenderType     TenderType?
   paidStatus     PaidStatus       @default(UNPAID)
-  cardAmount     Decimal?         @db.Decimal(10, 2)
-  cashAmount     Decimal?         @db.Decimal(10, 2)
-  cancelReason   String?
+  cardAmount           Decimal?         @db.Decimal(10, 2)
+  cashAmount           Decimal?         @db.Decimal(10, 2)
+  refundTenderType     TenderType?
+  refundedCardAmount   Decimal?         @db.Decimal(10, 2)
+  refundedCashAmount   Decimal?         @db.Decimal(10, 2)
+  refundedAt           DateTime?
+  refundedById         String?
+  refundedBy           User?            @relation("OrderRefundedBy", fields: [refundedById], references: [id])
+  cancelReason         String?
   cancelledAt    DateTime?
   cancelledById  String?
   cancelledBy    User?            @relation("OrderCancelledBy", fields: [cancelledById], references: [id])

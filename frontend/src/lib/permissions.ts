@@ -22,3 +22,7 @@ export function canViewCashier(user: SessionUser | null | undefined) {
 export function isManager(user: SessionUser | null | undefined) {
   return hasRole(user, "MANAGER");
 }
+
+export function canRecordRefunds(user: SessionUser | null | undefined) {
+  return isManager(user);
+}

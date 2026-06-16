@@ -8,7 +8,7 @@ import { useLocale } from "../context/LocaleContext";
 export function LoginPage() {
   const { user, loading, login } = useAuth();
   const { t } = useLocale();
-  const [email, setEmail] = useState("manager@demo.com");
+  const [email, setEmail] = useState("manager1@demo.com");
   const [password, setPassword] = useState("password123");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);

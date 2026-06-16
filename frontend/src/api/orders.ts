@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { Order, TenderPayload } from "../types";
+import type { Order, RefundPayload, TenderPayload } from "../types";
 
 export type CreateOrderItem = {
   menuItemId: string;
@@ -36,10 +36,14 @@ export function reprintReceipt(orderId: string) {
   );
 }
 
-export function refundOrder(orderId: string) {
-  return apiRequest<{ order: Order }>(`/orders/${orderId}/refund`, {
+export function getOrderByTicket(ticketNumber: number) {
+  return apiRequest<{ order: Order }>(`/orders/by-ticket/${ticketNumber}`);
+}
+
+export function recordRefund(orderId: string, refund: RefundPayload) {
+  return apiRequest<{ order: Order }>(`/orders/${orderId}/record-refund`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ refund }),
   });
 }
 

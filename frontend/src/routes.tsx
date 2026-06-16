@@ -7,6 +7,7 @@ import { EditMenuPage } from "./pages/EditMenuPage";
 import { KitchenFeedPage } from "./pages/KitchenFeedPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceOrderPage } from "./pages/PlaceOrderPage";
+import { RefundsPage } from "./pages/RefundsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export const appRoutes = (
@@ -19,6 +20,7 @@ export const appRoutes = (
         <Route path="/edit-menu" element={<EditMenuPage />} />
         <Route path="/kitchen-feed" element={<KitchenFeedPage />} />
         <Route path="/cashier-feed" element={<CashierFeedPage />} />
+        <Route path="/refunds" element={<RefundsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Route>

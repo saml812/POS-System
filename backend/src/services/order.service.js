@@ -9,7 +9,11 @@ const ACTOR = { id: true, email: true, role: true };
 const ITEMS = { items: { include: { options: true } } };
 
 const include = {
-  active: { ...ITEMS, placedBy: { select: ACTOR } },
+  active: {
+    ...ITEMS,
+    placedBy: { select: ACTOR },
+    refundedBy: { select: ACTOR },
+  },
   cashier: {
     ...ITEMS,
     placedBy: { select: ACTOR },
@@ -56,6 +60,13 @@ function toOrder(order) {
     paidStatus: order.paidStatus ?? "UNPAID",
     cardAmount: order.cardAmount != null ? Number(order.cardAmount) : null,
     cashAmount: order.cashAmount != null ? Number(order.cashAmount) : null,
+    refundTenderType: order.refundTenderType ?? null,
+    refundedCardAmount:
+      order.refundedCardAmount != null ? Number(order.refundedCardAmount) : null,
+    refundedCashAmount:
+      order.refundedCashAmount != null ? Number(order.refundedCashAmount) : null,
+    refundedAt: order.refundedAt ?? null,
+    refundedBy: order.refundedBy ?? null,
     cancelReason: order.cancelReason,
     cancelledAt: order.cancelledAt,
     cancelledBy: order.cancelledBy ?? null,
@@ -377,21 +388,52 @@ export async function reprintReceipt(orderId) {
   return { printed: true, order: toOrder(order) };
 }
 
-export async function refundOrder(orderId, user) {
-  const order = await loadOrderForCheckout(orderId);
-
-  if (order.status !== "COMPLETED") {
-    throw appError("Only completed orders can be refunded", 400);
+export async function getOrderByTicket(ticketNumber) {
+  const num = Number(ticketNumber);
+  if (!Number.isInteger(num) || num < 1) {
+    throw appError("Invalid ticket number", 400);
   }
 
-  const effects = await checkoutService.refundCardTender(order);
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: { paidStatus: effects.paidStatus },
-    include: { ...ITEMS, placedBy: { select: ACTOR } },
+  const order = await prisma.order.findUnique({
+    where: {
+      businessDate_ticketNumber: {
+        businessDate: getBusinessDate(),
+        ticketNumber: num,
+      },
+    },
+    include: include.active,
   });
 
-  return publishOrder(toOrder(updated), "order:updated");
+  if (!order) {
+    throw appError("Order not found", 404);
+  }
+
+  return toOrder(order);
+}
+
+export async function recordRefund(orderId, user, refund) {
+  const order = await loadOrderForCheckout(orderId);
+
+  checkoutService.assertCanRecordRefund(order);
+  const parsed = checkoutService.parseRefundPayload(refund, order);
+  const effects = checkoutService.buildRefundEffects(parsed);
+
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      ...effects,
+      refundedAt: new Date(),
+      refundedById: user.id,
+    },
+    include: include.active,
+  });
+
+  const payload = toOrder({
+    ...updated,
+    refundedBy: toUserSummary(user),
+  });
+
+  return publishOrder(payload, "order:updated");
 }
 
 export async function getActiveOrders({ status, awaitingPaid } = {}) {
@@ -486,9 +528,6 @@ export async function completeOrder(orderId, user) {
 }
 
 export async function cancelOrder(orderId, user, { reason } = {}) {
-  const full = await loadOrderForCheckout(orderId);
-  assertCanCancel(full, user);
-
   return runTransition(orderId, user, {
     event: "order:cancelled",
     actorField: "cancelledBy",

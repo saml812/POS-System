@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocale } from "../../context/LocaleContext";
-import type { TenderPayload, TenderType } from "../../types";
+import { useTenderSelection } from "../../hooks/useTenderSelection";
+import type { TenderPayload } from "../../types";
 import { formatMoney } from "../../utils/order";
+import { TenderFields } from "../checkout/TenderFields";
 
 export type CheckoutOrderType = "walk-in" | "call-in";
 
@@ -30,37 +32,24 @@ export function CheckoutModal({
 }: CheckoutModalProps) {
   const { t } = useLocale();
   const [orderType, setOrderType] = useState<CheckoutOrderType>("walk-in");
-  const [method, setMethod] = useState<TenderType>("CARD");
-  const [cardAmountInput, setCardAmountInput] = useState("");
+  const {
+    method,
+    setMethod,
+    cardAmountInput,
+    setCardAmountInput,
+    cashRemainder,
+    splitInvalid,
+    buildTender,
+  } = useTenderSelection({ open, total, defaultMethod: "CARD" });
 
   useEffect(() => {
     if (!open) return;
     setOrderType("walk-in");
-    setMethod("CARD");
-    setCardAmountInput("");
   }, [open, mode]);
 
   const payAtPickup = orderType === "call-in";
 
-  const cardAmount = useMemo(() => {
-    if (method !== "SPLIT") return total;
-    const parsed = Number(cardAmountInput);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }, [method, cardAmountInput, total]);
-
-  const cashRemainder = useMemo(() => {
-    if (method !== "SPLIT") return 0;
-    return Math.max(0, Math.round((total - cardAmount) * 100) / 100);
-  }, [method, cardAmount, total]);
-
   if (!open) return null;
-
-  function buildTender(): TenderPayload {
-    if (method === "SPLIT") {
-      return { method: "SPLIT", cardAmount: cardAmount };
-    }
-    return { method };
-  }
 
   function handlePrimary() {
     if (mode === "place" && payAtPickup) {
@@ -75,11 +64,6 @@ export function CheckoutModal({
       onConfirmPaid(tender);
     }
   }
-
-  const splitInvalid =
-    !payAtPickup &&
-    method === "SPLIT" &&
-    (cardAmount <= 0 || cardAmount >= total);
 
   return (
     <div className="dd-modal-backdrop" onClick={busy ? undefined : onClose}>
@@ -131,42 +115,17 @@ export function CheckoutModal({
         ) : null}
 
         {!payAtPickup || mode === "collect" ? (
-          <div className="checkout-methods">
-            <p className="checkout-manual-hint muted">{t("checkout.manualHint")}</p>
-            <span className="checkout-methods-label">{t("checkout.tenderLabel")}</span>
-            <div className="checkout-method-grid">
-              {(["CASH", "CARD", "SPLIT"] as TenderType[]).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`checkout-method-btn ${method === value ? "active" : ""}`}
-                  disabled={busy}
-                  onClick={() => setMethod(value)}
-                >
-                  {t(`checkout.tenders.${value}`)}
-                </button>
-              ))}
-            </div>
-
-            {method === "SPLIT" ? (
-              <label className="checkout-split-field">
-                <span>{t("checkout.cardAmount")}</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  max={total - 0.01}
-                  className="dd-input"
-                  value={cardAmountInput}
-                  onChange={(e) => setCardAmountInput(e.target.value)}
-                  disabled={busy}
-                />
-                <span className="muted">
-                  {t("checkout.cashRemainder", { amount: formatMoney(cashRemainder) })}
-                </span>
-              </label>
-            ) : null}
-          </div>
+          <TenderFields
+            method={method}
+            onMethodChange={setMethod}
+            cardAmountInput={cardAmountInput}
+            onCardAmountInputChange={setCardAmountInput}
+            cashRemainder={cashRemainder}
+            total={total}
+            hint={t("checkout.manualHint")}
+            label={t("checkout.tenderLabel")}
+            busy={busy}
+          />
         ) : (
           <div className="checkout-callin-panel" role="status">
             <span className="checkout-callin-icon" aria-hidden>

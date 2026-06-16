@@ -80,17 +80,51 @@ export function assertCanConfirmPickupPaid(order) {
   }
 }
 
-export async function refundCardTender(order) {
-  if (!order.cardAmount || Number(order.cardAmount) <= 0) {
-    throw appError("No card tender to refund", 400);
+export function assertCanRecordRefund(order) {
+  if (order.status !== "COMPLETED") {
+    throw appError("Only completed orders can be refunded", 400);
   }
 
   if (order.paidStatus !== "PAID") {
     throw appError("Only paid orders can be refunded", 400);
   }
+}
 
+export function parseRefundPayload(refund, order) {
+  const paidTotal = roundMoney(
+    Number(order.cardAmount ?? 0) + Number(order.cashAmount ?? 0),
+  );
+
+  if (paidTotal <= 0) {
+    throw appError("Order has no paid amount to refund", 400);
+  }
+
+  const parsed = parseTenderPayload(refund, paidTotal);
+  const origCard = Number(order.cardAmount ?? 0);
+  const origCash = Number(order.cashAmount ?? 0);
+
+  if (parsed.cardAmount > origCard) {
+    throw appError("Card refund cannot exceed the original card amount", 400);
+  }
+
+  if (parsed.cashAmount > origCash) {
+    throw appError("Cash refund cannot exceed the original cash amount", 400);
+  }
+
+  const refundTotal = roundMoney(parsed.cardAmount + parsed.cashAmount);
+  if (refundTotal !== paidTotal) {
+    throw appError("Refund must cover the full paid amount", 400);
+  }
+
+  return parsed;
+}
+
+export function buildRefundEffects(parsed) {
   return {
     paidStatus: "REFUNDED",
+    refundTenderType: parsed.method,
+    refundedCardAmount: parsed.cardAmount,
+    refundedCashAmount: parsed.cashAmount,
   };
 }
 

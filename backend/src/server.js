@@ -13,6 +13,7 @@ import ordersRoutes from "./routes/orders.routes.js";
 import kitchenRoutes from "./routes/kitchen.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
+import statsRoutes from "./routes/stats.routes.js";
 import { refreshTicketResetConfig } from "./lib/tickets.js";
 import { refreshReceiptConfig } from "./lib/receiptConfig.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
@@ -47,6 +48,7 @@ app.use("/api/orders", ordersRoutes);
 app.use("/api/kitchen", kitchenRoutes);
 app.use("/api/cashier", cashierRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/stats", statsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

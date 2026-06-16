@@ -65,6 +65,8 @@ export type TenderPayload = {
   cardAmount?: number;
 };
 
+export type RefundPayload = TenderPayload;
+
 export type OrderUser = {
   id: string;
   email: string;
@@ -100,6 +102,11 @@ export type Order = {
   paidStatus: PaidStatus;
   cardAmount: number | null;
   cashAmount: number | null;
+  refundTenderType: TenderType | null;
+  refundedCardAmount: number | null;
+  refundedCashAmount: number | null;
+  refundedAt: string | null;
+  refundedBy: OrderUser | null;
   cancelReason: string | null;
   cancelledAt: string | null;
   cancelledBy: OrderUser | null;

@@ -14,6 +14,7 @@ const navItems: {
   { to: "/edit-menu", key: "nav.editMenu" },
   { to: "/kitchen-feed", key: "nav.kitchenFeed" },
   { to: "/cashier-feed", key: "nav.cashierFeed" },
+  { to: "/refunds", key: "nav.refunds", roles: ["MANAGER"] },
   { to: "/settings", key: "nav.settings", roles: ["MANAGER"] },
 ];
 
