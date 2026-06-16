@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getMenu } from "../api/menu";
-import { cancelOrder, createOrder, getActiveOrders } from "../api/orders";
-import { AddToCartModal } from "../components/AddToCartModal";
+import {
+  cancelOrder,
+  collectPayment,
+  confirmOrderCash,
+  createOrder,
+  getActiveOrders,
+  refundOrder,
+  retryPayment,
+  voidCardPortion,
+} from "../api/orders";
+import { AddToCartModal, type CartItemDraft } from "../components/AddToCartModal";
 import { CancelOrderForm } from "../components/CancelOrderForm";
 import { OrderCard } from "../components/OrderCard";
 import { CartPanel } from "../components/place-order/CartPanel";
+import {
+  CheckoutModal,
+  type CheckoutStep,
+} from "../components/place-order/CheckoutModal";
 import { MenuItemCard } from "../components/place-order/MenuItemCard";
 import {
   MobileCartBar,
@@ -14,27 +27,47 @@ import { Banner } from "../components/ui/Banner";
 import { useAuth } from "../context/AuthContext";
 import { useLocale } from "../context/LocaleContext";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import { useCart } from "../hooks/useCart";
+import { useCart, type ResolvedCartLine } from "../hooks/useCart";
 import { useOrderSocket } from "../hooks/useOrderSocket";
-import { canPlaceOrders } from "../lib/permissions";
-import type { Category, MenuItem, Order } from "../types";
-import { applyPendingOrderEvent } from "../utils/order";
+import { canPlaceOrders, isManager } from "../lib/permissions";
+import type { Category, MenuItem, Order, PaymentPayload } from "../types";
+import {
+  applyRefundableOrderEvent,
+  applyStaffOrderEvent,
+  canRefundOrder,
+  isSplitAwaitingCash,
+  mergeOrderLists,
+  needsCollectPayment,
+  orderTotal,
+} from "../utils/order";
 
 type MenuCategory = Category & { items: MenuItem[] };
+
+type CartModalState =
+  | { mode: "add"; item: MenuItem }
+  | { mode: "edit"; item: MenuItem; lineKey: string; initial: CartItemDraft }
+  | null;
 
 export function PlaceOrderPage() {
   const { user } = useAuth();
   const { t } = useLocale();
   const canPlace = canPlaceOrders(user);
+  const manager = isManager(user);
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
-  const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
+  const [cartModal, setCartModal] = useState<CartModalState>(null);
   const [activeCategory, setActiveCategory] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
+  const [staffOrders, setStaffOrders] = useState<Order[]>([]);
+  const [refundableOrders, setRefundableOrders] = useState<Order[]>([]);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutMode, setCheckoutMode] = useState<"place" | "collect">("place");
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>("payment");
+  const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
 
   const menuItems = useMemo(
     () => categories.flatMap((category) => category.items),
@@ -42,35 +75,67 @@ export function PlaceOrderPage() {
   );
 
   const cart = useCart(menuItems);
-  const { error, success, busy, run } = useAsyncAction(t("placeOrder.failed"));
+  const { error, success, busy, run, setSuccess } = useAsyncAction(
+    t("placeOrder.failed"),
+  );
 
-  const loadPendingOrders = useCallback(async () => {
+  const loadOrderLists = useCallback(async () => {
     if (!canPlace) return;
-    const data = await getActiveOrders("PENDING");
-    setPendingOrders(data.orders);
-  }, [canPlace]);
+
+    const [unpaidData, pendingData, completedData] = await Promise.all([
+      getActiveOrders({ needsPayment: true }),
+      getActiveOrders({ status: "PENDING" }),
+      manager ? getActiveOrders({ status: "COMPLETED" }) : Promise.resolve({ orders: [] }),
+    ]);
+
+    setStaffOrders(
+      mergeOrderLists([...unpaidData.orders, ...pendingData.orders]),
+    );
+
+    if (manager) {
+      setRefundableOrders(
+        completedData.orders.filter((order) => canRefundOrder(order)),
+      );
+    }
+  }, [canPlace, manager]);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
+
     getMenu()
       .then((data) => {
+        if (!active) return;
         setCategories(data.categories);
         if (data.categories[0]) {
           setActiveCategory(data.categories[0].id);
         }
       })
-      .catch((err: Error) => setLoadError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => {
+        if (active) setLoadError(err.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    loadPendingOrders().catch(() => undefined);
-  }, [loadPendingOrders]);
+    loadOrderLists().catch(() => undefined);
+  }, [loadOrderLists]);
 
   useOrderSocket({
     enabled: canPlace,
     onOrder: (_event, order) => {
-      setPendingOrders((current) => applyPendingOrderEvent(current, order));
+      setStaffOrders((current) => applyStaffOrderEvent(current, order));
+      if (manager) {
+        setRefundableOrders((current) =>
+          applyRefundableOrderEvent(current, order),
+        );
+      }
     },
   });
 
@@ -106,6 +171,62 @@ export function PlaceOrderPage() {
     }
   }, [filteredCategories, activeCategory]);
 
+  function openAddModal(item: MenuItem) {
+    setCartModal({ mode: "add", item });
+  }
+
+  function openEditModal(line: ResolvedCartLine) {
+    setCartModal({
+      mode: "edit",
+      item: line.item,
+      lineKey: line.key,
+      initial: {
+        optionIds: line.optionIds,
+        sizeId: line.sizeId,
+        preferences: line.preferences,
+        quantity: line.quantity,
+      },
+    });
+  }
+
+  function closeCartModal() {
+    setCartModal(null);
+  }
+
+  const cartItemsPayload = () =>
+    cart.lines.map(
+      ({ menuItemId, optionIds, sizeId, preferences, quantity }) => ({
+        menuItemId,
+        optionIds,
+        sizeId,
+        preferences,
+        quantity,
+      }),
+    );
+
+  function closeCheckout() {
+    if (busy) return;
+    setCheckoutOpen(false);
+    setCheckoutOrder(null);
+    setCheckoutStep("payment");
+    setCheckoutMode("place");
+  }
+
+  function openPlaceCheckout() {
+    if (cart.lines.length === 0) return;
+    setCheckoutMode("place");
+    setCheckoutStep("payment");
+    setCheckoutOrder(null);
+    setCheckoutOpen(true);
+  }
+
+  function openOrderCheckout(order: Order) {
+    setCheckoutMode("collect");
+    setCheckoutOrder(order);
+    setCheckoutStep(isSplitAwaitingCash(order) ? "split-cash" : "payment");
+    setCheckoutOpen(true);
+  }
+
   async function handleCancelPending(orderId: string, reason?: string) {
     await run(
       () => cancelOrder(orderId, reason),
@@ -113,37 +234,120 @@ export function PlaceOrderPage() {
         successMessage: t("placeOrder.pendingCancelled"),
         onAfter: async () => {
           setCancellingId(null);
-          await loadPendingOrders();
+          await loadOrderLists();
         },
       },
     );
   }
 
-  async function handlePlaceOrder() {
-    if (cart.lines.length === 0) return;
+  async function handlePlaceWalkIn(payment: PaymentPayload) {
+    await run(async () => {
+      const { order } = await createOrder({
+        items: cartItemsPayload(),
+        payment,
+      });
+
+      if (isSplitAwaitingCash(order)) {
+        setCheckoutOrder(order);
+        setCheckoutStep("split-cash");
+        setCheckoutMode("place");
+        setCheckoutOpen(true);
+      } else {
+        closeCheckout();
+        cart.clear();
+        setSuccess(
+          t("placeOrder.paidSent", { num: order.ticketNumber }),
+        );
+      }
+
+      await loadOrderLists();
+    });
+  }
+
+  async function handlePlaceCallIn() {
+    await run(
+      async () => {
+        await createOrder({
+          items: cartItemsPayload(),
+          payAtPickup: true,
+        });
+        closeCheckout();
+        cart.clear();
+        await loadOrderLists();
+      },
+      { successMessage: t("placeOrder.callInSent") },
+    );
+  }
+
+  async function handleCollect(payment: PaymentPayload) {
+    if (!checkoutOrder) return;
+
+    await run(async () => {
+      const action =
+        checkoutOrder.paymentStatus === "FAILED" ? retryPayment : collectPayment;
+      const { order } = await action(checkoutOrder.id, payment);
+
+      if (isSplitAwaitingCash(order)) {
+        setCheckoutOrder(order);
+        setCheckoutStep("split-cash");
+      } else {
+        closeCheckout();
+        setSuccess(t("payment.collected"));
+      }
+
+      await loadOrderLists();
+    });
+  }
+
+  async function handleConfirmSplitCash() {
+    const orderId = checkoutOrder?.id;
+    if (!orderId) return;
+
+    await run(async () => {
+      const { order } = await confirmOrderCash(orderId);
+      closeCheckout();
+      cart.clear();
+
+      if (checkoutMode === "place") {
+        setSuccess(
+          t("placeOrder.paidSent", { num: order.ticketNumber }),
+        );
+      } else {
+        setSuccess(t("payment.collected"));
+      }
+
+      await loadOrderLists();
+    });
+  }
+
+  async function handleVoidCard() {
+    const orderId = checkoutOrder?.id;
+    if (!orderId) return;
 
     await run(
-      () =>
-        createOrder(
-          cart.lines.map(
-            ({ menuItemId, optionIds, sizeId, preferences, quantity }) => ({
-              menuItemId,
-              optionIds,
-              sizeId,
-              preferences,
-              quantity,
-            }),
-          ),
-        ),
+      async () => {
+        await voidCardPortion(orderId);
+        closeCheckout();
+        await loadOrderLists();
+      },
+      { successMessage: t("payment.voidCardSuccess") },
+    );
+  }
+
+  async function handleRefund(orderId: string) {
+    await run(
+      () => refundOrder(orderId),
       {
-        successMessage: t("placeOrder.sent"),
-        onAfter: async () => {
-          cart.clear();
-          await loadPendingOrders();
-        },
+        successMessage: t("payment.refundSuccess"),
+        onAfter: loadOrderLists,
       },
     );
   }
+
+  const checkoutTotal =
+    checkoutMode === "place" || !checkoutOrder
+      ? cart.total
+      : orderTotal(checkoutOrder);
 
   const displayError = loadError || error;
 
@@ -217,7 +421,7 @@ export function PlaceOrderPage() {
                         item={item}
                         categoryId={activeCategoryData.id}
                         canAdd={canPlace}
-                        onAdd={() => setPickerItem(item)}
+                        onAdd={() => openAddModal(item)}
                       />
                     ))}
                   </div>
@@ -233,8 +437,9 @@ export function PlaceOrderPage() {
             canPlace={canPlace}
             submitting={busy}
             onChangeQuantity={cart.changeQuantity}
+            onEdit={openEditModal}
             onRemove={cart.remove}
-            onCheckout={handlePlaceOrder}
+            onCheckout={openPlaceCheckout}
           />
         </div>
       )}
@@ -255,48 +460,152 @@ export function PlaceOrderPage() {
         open={cart.open}
         onClose={() => cart.setOpen(false)}
         onChangeQuantity={cart.changeQuantity}
+        onEdit={openEditModal}
         onRemove={cart.remove}
-        onCheckout={handlePlaceOrder}
+        onCheckout={openPlaceCheckout}
       />
 
-      {pickerItem && (
+      {cartModal && (
         <AddToCartModal
-          key={pickerItem.id}
-          item={pickerItem}
-          onAdd={(optionIds, sizeId, preferences) => {
-            cart.add(pickerItem.id, optionIds, sizeId, preferences);
-            setPickerItem(null);
+          key={
+            cartModal.mode === "edit"
+              ? `edit-${cartModal.lineKey}`
+              : `add-${cartModal.item.id}`
+          }
+          item={cartModal.item}
+          mode={cartModal.mode}
+          initial={cartModal.mode === "edit" ? cartModal.initial : undefined}
+          onConfirm={(optionIds, sizeId, preferences, quantity) => {
+            if (cartModal.mode === "edit") {
+              cart.updateLine(cartModal.lineKey, {
+                optionIds,
+                sizeId,
+                preferences,
+                quantity,
+              });
+            } else {
+              cart.add(
+                cartModal.item.id,
+                optionIds,
+                sizeId,
+                preferences,
+                quantity,
+              );
+            }
+            closeCartModal();
           }}
-          onClose={() => setPickerItem(null)}
+          onClose={closeCartModal}
         />
       )}
 
-      {canPlace && pendingOrders.length > 0 && (
+      <CheckoutModal
+        open={checkoutOpen}
+        total={checkoutTotal}
+        ticketNumber={checkoutOrder?.ticketNumber}
+        mode={checkoutMode}
+        step={checkoutStep}
+        splitCardAmount={checkoutOrder?.cardAmount ?? 0}
+        splitCashAmount={checkoutOrder?.cashAmount ?? 0}
+        busy={busy}
+        onClose={closeCheckout}
+        onPlaceWalkIn={handlePlaceWalkIn}
+        onPlaceCallIn={handlePlaceCallIn}
+        onCollect={handleCollect}
+        onConfirmSplitCash={handleConfirmSplitCash}
+        onVoidCard={
+          checkoutStep === "split-cash" && checkoutOrder ? handleVoidCard : undefined
+        }
+      />
+
+      {canPlace && staffOrders.length > 0 && (
         <section className="dd-secondary-section">
-          <h3>{t("placeOrder.pendingTitle")}</h3>
-          <p className="muted">{t("placeOrder.pendingDesc")}</p>
+          <h3>{t("placeOrder.activeOrdersTitle")}</h3>
+          <p className="muted">{t("placeOrder.activeOrdersDesc")}</p>
           <div className="order-feed">
-            {pendingOrders.map((order) => (
+            {staffOrders.map((order) => (
               <OrderCard
                 key={order.id}
                 order={order}
                 actions={
-                  cancellingId === order.id ? (
-                    <CancelOrderForm
-                      busy={busy}
-                      onConfirm={(reason) => handleCancelPending(order.id, reason)}
-                      onDismiss={() => setCancellingId(null)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-small btn-danger"
-                      disabled={busy}
-                      onClick={() => setCancellingId(order.id)}
-                    >
-                      {t("order.cancel.order")}
-                    </button>
-                  )
+                  <div className="ft-ticket-action-row">
+                    {needsCollectPayment(order) ? (
+                      <button
+                        type="button"
+                        className="btn btn-brand btn-small"
+                        disabled={busy}
+                        onClick={() => openOrderCheckout(order)}
+                      >
+                        {order.paymentStatus === "FAILED"
+                          ? t("payment.retry")
+                          : isSplitAwaitingCash(order)
+                            ? t("payment.confirmCash")
+                            : t("payment.collect")}
+                      </button>
+                    ) : null}
+                    {isSplitAwaitingCash(order) ? (
+                      <button
+                        type="button"
+                        className="btn btn-small btn-danger"
+                        disabled={busy}
+                        onClick={() =>
+                          run(
+                            () => voidCardPortion(order.id),
+                            {
+                              successMessage: t("payment.voidCardSuccess"),
+                              onAfter: loadOrderLists,
+                            },
+                          )
+                        }
+                      >
+                        {t("payment.voidCard")}
+                      </button>
+                    ) : null}
+                    {order.status === "PENDING" ? (
+                      cancellingId === order.id ? (
+                        <CancelOrderForm
+                          busy={busy}
+                          onConfirm={(reason) =>
+                            handleCancelPending(order.id, reason)
+                          }
+                          onDismiss={() => setCancellingId(null)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-small btn-danger"
+                          disabled={busy}
+                          onClick={() => setCancellingId(order.id)}
+                        >
+                          {t("order.cancel.order")}
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {manager && refundableOrders.length > 0 && (
+        <section className="dd-secondary-section">
+          <h3>{t("placeOrder.refundTitle")}</h3>
+          <p className="muted">{t("placeOrder.refundDesc")}</p>
+          <div className="order-feed">
+            {refundableOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                actions={
+                  <button
+                    type="button"
+                    className="btn btn-small btn-danger"
+                    disabled={busy}
+                    onClick={() => handleRefund(order.id)}
+                  >
+                    {t("payment.refund")}
+                  </button>
                 }
               />
             ))}

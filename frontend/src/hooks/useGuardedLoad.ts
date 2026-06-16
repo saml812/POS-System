@@ -13,10 +13,21 @@ export function useGuardedLoad(
       return;
     }
 
+    let active = true;
     setLoading(true);
+    setError("");
+
     load()
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => {
+        if (active) setError(err.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [enabled, load]);
 
   return { loading, error, setError };

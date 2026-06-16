@@ -2,6 +2,7 @@ import { appError } from "../lib/appError.js";
 import { prisma } from "../lib/db.js";
 import { getBusinessDate, getNextTicketNumber } from "../lib/tickets.js";
 import { emitOrderEvent } from "../lib/socket.js";
+import * as paymentService from "./payment.service.js";
 
 const ACTOR = { id: true, email: true, role: true };
 const ITEMS = { items: { include: { options: true } } };
@@ -30,6 +31,87 @@ const menuItemSelect = {
   },
 };
 
+const STALE_PROCESSING_MS = 5 * 60 * 1000;
+
+function paymentNeedsActionFilter() {
+  return {
+    status: { notIn: ["COMPLETED", "CANCELLED"] },
+    OR: [
+      { paymentStatus: "FAILED" },
+      { paymentStatus: "PROCESSING" },
+      { payAtPickup: true, paymentStatus: "UNPAID" },
+      {
+        paymentMethod: "SPLIT",
+        paymentStatus: "UNPAID",
+        cardAmount: { gt: 0 },
+      },
+    ],
+  };
+}
+
+async function recoverStaleProcessing(order) {
+  if (order.paymentStatus !== "PROCESSING") {
+    return order;
+  }
+
+  const age = Date.now() - new Date(order.updatedAt).getTime();
+  if (age < STALE_PROCESSING_MS) {
+    throw appError("Payment is already in progress", 409);
+  }
+
+  console.error(
+    "[payment] stale PROCESSING recovered",
+    order.id,
+    order.ticketNumber,
+  );
+
+  return prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentStatus: "FAILED",
+      paymentError: "Payment timed out. Please retry.",
+    },
+    include: { ...ITEMS, placedBy: { select: ACTOR } },
+  });
+}
+
+async function prepareOrderForPayment(order) {
+  if (order.paymentStatus !== "PROCESSING") {
+    return order;
+  }
+
+  return recoverStaleProcessing(order);
+}
+
+async function safePersistPaymentEffects(order, effects) {
+  try {
+    return await persistPaymentEffects(order, effects);
+  } catch (persistErr) {
+    console.error(
+      "[payment] persist failed after terminal; saving payment fields",
+      order.id,
+      persistErr.message,
+    );
+
+    try {
+      const partial = await prisma.order.update({
+        where: { id: order.id },
+        data: paymentUpdateFromEffects(effects),
+        include: { ...ITEMS, placedBy: { select: ACTOR } },
+      });
+      await paymentService.finalizePaymentSideEffects(partial, effects);
+      return partial;
+    } catch (retryErr) {
+      console.error(
+        "[payment] critical: payment captured but DB save failed",
+        order.id,
+        retryErr.message,
+      );
+      throw persistErr;
+    }
+  }
+}
+
 function toUserSummary(user) {
   return { id: user.id, email: user.email, role: user.role };
 }
@@ -41,6 +123,13 @@ function toOrder(order) {
     businessDate: order.businessDate,
     status: order.status,
     previousStatus: order.previousStatus,
+    payAtPickup: order.payAtPickup ?? false,
+    paymentMethod: order.paymentMethod ?? null,
+    paymentStatus: order.paymentStatus ?? "UNPAID",
+    cardAmount: order.cardAmount != null ? Number(order.cardAmount) : null,
+    cashAmount: order.cashAmount != null ? Number(order.cashAmount) : null,
+    paymentAuthCode: order.paymentAuthCode ?? null,
+    paymentError: order.paymentError ?? null,
     cancelReason: order.cancelReason,
     cancelledAt: order.cancelledAt,
     cancelledBy: order.cancelledBy ?? null,
@@ -92,10 +181,10 @@ async function logTransition(tx, orderId, fromStatus, toStatus, userId) {
   });
 }
 
-async function findTodayOrder(tx, orderId) {
+async function findTodayOrder(tx, orderId, includeRelations = null) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { id: true, status: true, businessDate: true },
+    include: includeRelations,
   });
 
   if (!order || order.businessDate !== getBusinessDate()) {
@@ -208,7 +297,7 @@ function buildLineItem(menuItem, entry) {
   };
 }
 
-async function buildLineItems(items) {
+export async function buildLineItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
     throw appError("At least one item is required");
   }
@@ -245,6 +334,10 @@ function assertCanCancel(order, user) {
     throw appError(`Cannot cancel order in ${order.status} status`);
   }
 
+  if (order.paymentStatus === "PROCESSING") {
+    throw appError("Cannot cancel while payment is processing");
+  }
+
   if (user.role === "CASHIER" && order.status !== "PENDING") {
     throw appError("Cashiers can only cancel PENDING orders");
   }
@@ -257,32 +350,256 @@ function assertCanCancel(order, user) {
   }
 }
 
-export async function createOrder(user, { items }) {
-  const lineItems = await buildLineItems(items);
-  const businessDate = getBusinessDate();
+async function loadOrderForPayment(orderId) {
+  return findTodayOrder(prisma, orderId, {
+    ...ITEMS,
+    placedBy: { select: ACTOR },
+  });
+}
 
-  const order = await prisma.$transaction(async (tx) => {
+function paymentUpdateFromEffects(effects) {
+  const data = {};
+
+  if (effects.paymentMethod !== undefined) data.paymentMethod = effects.paymentMethod;
+  if (effects.paymentStatus !== undefined) data.paymentStatus = effects.paymentStatus;
+  if (effects.cardAmount !== undefined) data.cardAmount = effects.cardAmount;
+  if (effects.cashAmount !== undefined) data.cashAmount = effects.cashAmount;
+  if (effects.paymentError !== undefined) data.paymentError = effects.paymentError;
+  if (effects.paymentRefNo !== undefined) data.paymentRefNo = effects.paymentRefNo;
+  if (effects.paymentAuthCode !== undefined) data.paymentAuthCode = effects.paymentAuthCode;
+  if (effects.paymentRecordNo !== undefined) data.paymentRecordNo = effects.paymentRecordNo;
+  if (effects.paymentAcqRefData !== undefined) data.paymentAcqRefData = effects.paymentAcqRefData;
+  if (effects.paymentProcess !== undefined) data.paymentProcess = effects.paymentProcess;
+  if (effects.paymentAttemptCount !== undefined) {
+    data.paymentAttemptCount = effects.paymentAttemptCount;
+  }
+
+  return data;
+}
+
+async function persistPaymentEffects(order, effects) {
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: paymentUpdateFromEffects(effects),
+    include: { ...ITEMS, placedBy: { select: ACTOR } },
+  });
+
+  await paymentService.finalizePaymentSideEffects(updated, effects);
+  return updated;
+}
+
+async function markPaymentFailed(orderId, message) {
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      paymentStatus: "FAILED",
+      paymentError: message ?? "Payment failed",
+    },
+  });
+}
+
+function isTerminalBusyError(err) {
+  return err?.statusCode === 409 && /terminal is busy/i.test(err.message ?? "");
+}
+
+async function runCardPayment(order, payment, total, { onSuccess }) {
+  paymentService.parsePaymentPayload(payment, total);
+
+  const previousStatus = order.paymentStatus;
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { paymentStatus: "PROCESSING", paymentError: null },
+  });
+
+  try {
+    const effects = await paymentService.applyWalkInPayment(order, payment, total);
+    const updated = await safePersistPaymentEffects(order, effects);
+    return onSuccess(updated, effects);
+  } catch (err) {
+    if (isTerminalBusyError(err)) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { paymentStatus: previousStatus, paymentError: err.message },
+      });
+    } else {
+      await markPaymentFailed(order.id, err.message);
+    }
+    throw err;
+  }
+}
+
+export async function createOrder(user, body) {
+  const { items, payment, payAtPickup } = body ?? {};
+  const lineItems = await buildLineItems(items);
+  const total = paymentService.computeItemsTotal(lineItems);
+  const businessDate = getBusinessDate();
+  const isCallIn = Boolean(payAtPickup);
+
+  if (isCallIn && payment) {
+    throw appError("Payment cannot be provided for pay-at-pickup orders");
+  }
+
+  if (!isCallIn && !payment) {
+    throw appError("Payment is required for walk-in orders");
+  }
+
+  let created = await prisma.$transaction(async (tx) => {
     const ticketNumber = await getNextTicketNumber(tx, businessDate);
-    const created = await tx.order.create({
+    const order = await tx.order.create({
       data: {
         ticketNumber,
         businessDate,
         status: "PENDING",
         placedById: user.id,
+        payAtPickup: isCallIn,
+        paymentStatus: isCallIn ? "UNPAID" : "PROCESSING",
         items: { create: lineItems },
       },
       include: ITEMS,
     });
 
-    await logTransition(tx, created.id, null, "PENDING", user.id);
-    return withActor(created, "placedBy", user);
+    await logTransition(tx, order.id, null, "PENDING", user.id);
+    return withActor(order, "placedBy", user);
   });
 
-  return publishOrder(toOrder(order), "order:created", "order:updated");
+  if (isCallIn) {
+    return publishOrder(toOrder(created), "order:created", "order:updated");
+  }
+
+  try {
+    const effects = await paymentService.applyWalkInPayment(created, payment, total);
+    created = await safePersistPaymentEffects(created, effects);
+    const payload = toOrder(created);
+
+    if (effects.emitKitchen) {
+      return publishOrder(payload, "order:created", "order:updated");
+    }
+
+    return publishOrder(payload, "order:updated");
+  } catch (err) {
+    await markPaymentFailed(created.id, err.message);
+    throw err;
+  }
 }
 
-export async function getActiveOrders({ status } = {}) {
-  const statusFilter = status ? { status } : { status: { not: "COMPLETED" } };
+export async function collectPayment(orderId, user, payment) {
+  let order = await loadOrderForPayment(orderId);
+  order = await prepareOrderForPayment(order);
+  const total = paymentService.computeItemsTotal(order.items);
+
+  paymentService.assertCanCollectPayment(order);
+
+  return runCardPayment(order, payment, total, {
+    onSuccess: async (updated) =>
+      publishOrder(toOrder(updated), "order:updated"),
+  });
+}
+
+export async function confirmOrderCash(orderId, user) {
+  const order = await loadOrderForPayment(orderId);
+
+  if (order.status === "CANCELLED" || order.status === "COMPLETED") {
+    throw appError("Cannot confirm cash for this order", 400);
+  }
+
+  const effects = await paymentService.confirmSplitCash(order);
+  const updated = await persistPaymentEffects(order, effects);
+  const payload = toOrder(updated);
+
+  if (effects.emitKitchen && order.paymentStatus !== "AUTHORIZED") {
+    return publishOrder(payload, "order:created", "order:updated");
+  }
+
+  return publishOrder(payload, "order:updated");
+}
+
+export async function retryPayment(orderId, user, payment) {
+  let order = await loadOrderForPayment(orderId);
+  order = await prepareOrderForPayment(order);
+
+  if (!["FAILED", "UNPAID"].includes(order.paymentStatus)) {
+    throw appError("Payment cannot be retried in current state", 400);
+  }
+
+  if (paymentService.isSplitAwaitingCash(order)) {
+    throw appError(
+      "Split payment awaiting cash confirmation; use confirm-cash or void-card",
+      400,
+    );
+  }
+
+  if (order.payAtPickup) {
+    return collectPayment(orderId, user, payment);
+  }
+
+  const total = paymentService.computeItemsTotal(order.items);
+
+  return runCardPayment(order, payment, total, {
+    onSuccess: async (updated, effects) => {
+      const payload = toOrder(updated);
+
+      if (effects.emitKitchen) {
+        return publishOrder(payload, "order:created", "order:updated");
+      }
+
+      return publishOrder(payload, "order:updated");
+    },
+  });
+}
+
+export async function voidCardPortion(orderId, user) {
+  const order = await loadOrderForPayment(orderId);
+
+  if (order.status === "CANCELLED" || order.status === "COMPLETED") {
+    throw appError("Cannot void card payment for this order", 400);
+  }
+
+  if (!paymentService.isSplitAwaitingCash(order)) {
+    throw appError("No authorized card portion to void", 400);
+  }
+
+  const effects = await paymentService.voidCardPortion(order);
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: paymentUpdateFromEffects(effects),
+    include: { ...ITEMS, placedBy: { select: ACTOR } },
+  });
+
+  return publishOrder(toOrder(updated), "order:updated");
+}
+
+export async function refundOrder(orderId, user) {
+  const order = await loadOrderForPayment(orderId);
+
+  if (order.status !== "COMPLETED") {
+    throw appError("Only completed orders can be refunded", 400);
+  }
+
+  const effects = await paymentService.refundCardPayment(order);
+  const updated = await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentStatus: effects.paymentStatus,
+      paymentAttemptCount: effects.paymentAttemptCount,
+    },
+    include: { ...ITEMS, placedBy: { select: ACTOR } },
+  });
+
+  return publishOrder(toOrder(updated), "order:updated");
+}
+
+export async function getActiveOrders({ status, needsPayment } = {}) {
+  let statusFilter;
+
+  if (needsPayment) {
+    statusFilter = paymentNeedsActionFilter();
+  } else if (status) {
+    statusFilter = { status };
+  } else {
+    statusFilter = { status: { not: "COMPLETED" } };
+  }
+
   return listToday(statusFilter, include.active);
 }
 
@@ -291,7 +608,13 @@ export async function getKitchenFeed({ includeVoided = false } = {}) {
     ? ["PENDING", "IN_PROGRESS", "FINISHED", "CANCELLED"]
     : ["PENDING", "IN_PROGRESS", "FINISHED"];
 
-  return listToday({ status: { in: statuses } }, include.active);
+  return listToday(
+    {
+      status: { in: statuses },
+      ...paymentService.kitchenPaymentFilter(),
+    },
+    include.active,
+  );
 }
 
 export async function getCashierFeed({ includeInProgress = false } = {}) {
@@ -338,6 +661,11 @@ export async function completeOrder(orderId, user) {
     actorField: "completedBy",
     apply: async (tx, order) => {
       requireStatus(order, "FINISHED", "complete");
+
+      if (order.paymentStatus !== "AUTHORIZED") {
+        throw appError("Order must be paid before completing", 400);
+      }
+
       return updateOrder(
         tx,
         order.id,
@@ -353,6 +681,28 @@ export async function completeOrder(orderId, user) {
 }
 
 export async function cancelOrder(orderId, user, { reason } = {}) {
+  const full = await loadOrderForPayment(orderId);
+  assertCanCancel(full, user);
+
+  const hasCard =
+    full.cardAmount &&
+    Number(full.cardAmount) > 0 &&
+    (full.paymentStatus === "AUTHORIZED" ||
+      (full.paymentStatus === "UNPAID" && full.paymentMethod === "SPLIT"));
+
+  if (hasCard) {
+    const voidEffects = await paymentService.voidCardPayment(full);
+    if (voidEffects.voided) {
+      await prisma.order.update({
+        where: { id: full.id },
+        data: {
+          paymentStatus: voidEffects.paymentStatus,
+          paymentAttemptCount: voidEffects.paymentAttemptCount,
+        },
+      });
+    }
+  }
+
   return runTransition(orderId, user, {
     event: "order:cancelled",
     actorField: "cancelledBy",

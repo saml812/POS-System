@@ -70,21 +70,101 @@ export function useCart(menuItems: MenuItem[]) {
     optionIds: string[],
     sizeId: string | null,
     preferences?: string,
+    quantity = 1,
   ) {
     const key = cartLineKey(menuItemId, optionIds, sizeId, preferences);
+    const amount = Math.max(1, quantity);
     setLines((current) => {
       const existing = current.find((line) => line.key === key);
       if (existing) {
         return current.map((line) =>
-          line.key === key ? { ...line, quantity: line.quantity + 1 } : line,
+          line.key === key
+            ? { ...line, quantity: line.quantity + amount }
+            : line,
         );
       }
       return [
         ...current,
-        { key, menuItemId, optionIds, sizeId, preferences, quantity: 1 },
+        {
+          key,
+          menuItemId,
+          optionIds,
+          sizeId,
+          preferences,
+          quantity: amount,
+        },
       ];
     });
     setOpen(true);
+  }
+
+  function updateLine(
+    oldKey: string,
+    {
+      optionIds,
+      sizeId,
+      preferences,
+      quantity,
+    }: {
+      optionIds: string[];
+      sizeId: string | null;
+      preferences?: string;
+      quantity: number;
+    },
+  ) {
+    setLines((current) => {
+      const oldLine = current.find((line) => line.key === oldKey);
+      if (!oldLine) return current;
+
+      const nextQuantity = Math.max(0, quantity);
+      if (nextQuantity === 0) {
+        return current.filter((line) => line.key !== oldKey);
+      }
+
+      const newKey = cartLineKey(
+        oldLine.menuItemId,
+        optionIds,
+        sizeId,
+        preferences,
+      );
+
+      if (oldKey === newKey) {
+        return current.map((line) =>
+          line.key === oldKey
+            ? {
+                ...line,
+                optionIds,
+                sizeId,
+                preferences,
+                quantity: nextQuantity,
+              }
+            : line,
+        );
+      }
+
+      const withoutOld = current.filter((line) => line.key !== oldKey);
+      const existing = withoutOld.find((line) => line.key === newKey);
+
+      if (existing) {
+        return withoutOld.map((line) =>
+          line.key === newKey
+            ? { ...line, quantity: line.quantity + nextQuantity }
+            : line,
+        );
+      }
+
+      return [
+        ...withoutOld,
+        {
+          key: newKey,
+          menuItemId: oldLine.menuItemId,
+          optionIds,
+          sizeId,
+          preferences,
+          quantity: nextQuantity,
+        },
+      ];
+    });
   }
 
   function changeQuantity(key: string, delta: number) {
@@ -117,6 +197,7 @@ export function useCart(menuItems: MenuItem[]) {
     setOpen,
     add,
     changeQuantity,
+    updateLine,
     remove,
     clear,
   };

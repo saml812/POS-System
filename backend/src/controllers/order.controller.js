@@ -7,9 +7,10 @@ export const createOrder = asyncHandler(async (req, res) => {
 });
 
 export const getActiveOrders = asyncHandler(async (req, res) => {
-  const orders = await orderService.getActiveOrders(
-    req.query.status ? { status: req.query.status } : {},
-  );
+  const orders = await orderService.getActiveOrders({
+    status: req.query.status,
+    needsPayment: req.query.needsPayment === "true",
+  });
   res.json({ orders });
 });
 
@@ -44,5 +45,38 @@ export const startOrder = asyncHandler(async (req, res) => {
 
 export const finishOrder = asyncHandler(async (req, res) => {
   const order = await orderService.finishOrder(req.params.id, req.user);
+  res.json({ order });
+});
+
+export const collectPayment = asyncHandler(async (req, res) => {
+  const order = await orderService.collectPayment(
+    req.params.id,
+    req.user,
+    req.body?.payment ?? req.body,
+  );
+  res.json({ order });
+});
+
+export const confirmOrderCash = asyncHandler(async (req, res) => {
+  const order = await orderService.confirmOrderCash(req.params.id, req.user);
+  res.json({ order });
+});
+
+export const retryPayment = asyncHandler(async (req, res) => {
+  const order = await orderService.retryPayment(
+    req.params.id,
+    req.user,
+    req.body?.payment ?? req.body,
+  );
+  res.json({ order });
+});
+
+export const refundOrder = asyncHandler(async (req, res) => {
+  const order = await orderService.refundOrder(req.params.id, req.user);
+  res.json({ order });
+});
+
+export const voidCardPortion = asyncHandler(async (req, res) => {
+  const order = await orderService.voidCardPortion(req.params.id, req.user);
   res.json({ order });
 });

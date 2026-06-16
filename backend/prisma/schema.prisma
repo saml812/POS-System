@@ -22,6 +22,21 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum PaymentMethod {
+  CASH
+  CARD
+  SPLIT
+}
+
+enum PaymentStatus {
+  UNPAID
+  PROCESSING
+  AUTHORIZED
+  FAILED
+  VOIDED
+  REFUNDED
+}
+
 model User {
   id              String           @id @default(cuid())
   email           String           @unique
@@ -104,12 +119,24 @@ model MenuItemSize {
 }
 
 model Order {
-  id             String           @id @default(cuid())
-  ticketNumber   Int
-  businessDate   String
-  status         OrderStatus      @default(PENDING)
-  previousStatus OrderStatus?
-  cancelReason   String?
+  id                String           @id @default(cuid())
+  ticketNumber      Int
+  businessDate      String
+  status            OrderStatus      @default(PENDING)
+  previousStatus    OrderStatus?
+  payAtPickup       Boolean          @default(false)
+  paymentMethod     PaymentMethod?
+  paymentStatus     PaymentStatus    @default(UNPAID)
+  cardAmount        Decimal?         @db.Decimal(10, 2)
+  cashAmount        Decimal?         @db.Decimal(10, 2)
+  paymentRefNo      String?
+  paymentAuthCode   String?
+  paymentRecordNo   String?
+  paymentAcqRefData String?
+  paymentProcess    String?
+  paymentError      String?
+  paymentAttemptCount Int            @default(0)
+  cancelReason      String?
   cancelledAt    DateTime?
   cancelledById  String?
   cancelledBy    User?            @relation("OrderCancelledBy", fields: [cancelledById], references: [id])

@@ -3,25 +3,59 @@ import { useLocale } from "../context/LocaleContext";
 import type { MenuItem } from "../types";
 import { formatMoney, formatPriceDelta, lineUnitPrice } from "../utils/order";
 
+export type CartItemDraft = {
+  optionIds: string[];
+  sizeId: string | null;
+  preferences?: string;
+  quantity: number;
+};
+
 type AddToCartModalProps = {
   item: MenuItem;
-  onAdd: (
+  mode?: "add" | "edit";
+  initial?: CartItemDraft;
+  onConfirm: (
     optionIds: string[],
     sizeId: string | null,
-    preferences?: string,
+    preferences: string | undefined,
+    quantity: number,
   ) => void;
   onClose: () => void;
 };
 
-export function AddToCartModal({ item, onAdd, onClose }: AddToCartModalProps) {
+export function AddToCartModal({
+  item,
+  mode = "add",
+  initial,
+  onConfirm,
+  onClose,
+}: AddToCartModalProps) {
   const { t } = useLocale();
-  const options = (item.options ?? []).filter((option) => option.isAvailable);
-  const sizes = (item.sizes ?? []).filter((size) => size.isAvailable);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [sizeId, setSizeId] = useState<string | null>(
-    sizes.length > 0 ? sizes[0].id : null,
+  const options = useMemo(
+    () => (item.options ?? []).filter((option) => option.isAvailable),
+    [item.options],
   );
-  const [preferences, setPreferences] = useState("");
+  const sizes = useMemo(
+    () => (item.sizes ?? []).filter((size) => size.isAvailable),
+    [item.sizes],
+  );
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(initial?.optionIds ?? []),
+  );
+  const [sizeId, setSizeId] = useState<string | null>(
+    initial?.sizeId ?? null,
+  );
+  const [preferences, setPreferences] = useState(initial?.preferences ?? "");
+  const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+
+  useEffect(() => {
+    setSelected(new Set(initial?.optionIds ?? []));
+    setSizeId(
+      initial?.sizeId ?? (sizes.length > 0 ? sizes[0].id : null),
+    );
+    setPreferences(initial?.preferences ?? "");
+    setQuantity(initial?.quantity ?? 1);
+  }, [item.id, sizes, initial]);
 
   const selectedOptions = useMemo(
     () => options.filter((option) => selected.has(option.id)),
@@ -38,12 +72,7 @@ export function AddToCartModal({ item, onAdd, onClose }: AddToCartModalProps) {
     ...selectedOptions,
   ]);
 
-  useEffect(() => {
-    setSelected(new Set());
-    setSizeId(sizes.length > 0 ? sizes[0].id : null);
-    setPreferences("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id]);
+  const lineTotal = unitPrice * quantity;
 
   function toggleOption(optionId: string) {
     setSelected((current) => {
@@ -59,10 +88,10 @@ export function AddToCartModal({ item, onAdd, onClose }: AddToCartModalProps) {
 
   const sizeMissing = sizes.length > 0 && !sizeId;
 
-  function handleAdd() {
-    if (sizeMissing) return;
+  function handleConfirm() {
+    if (sizeMissing || quantity < 1) return;
     const trimmed = preferences.trim();
-    onAdd([...selected], sizeId, trimmed || undefined);
+    onConfirm([...selected], sizeId, trimmed || undefined, quantity);
   }
 
   return (
@@ -82,8 +111,15 @@ export function AddToCartModal({ item, onAdd, onClose }: AddToCartModalProps) {
         >
           ×
         </button>
-        <h3 id="add-item-title">{item.name}</h3>
-        {item.description && <p className="dd-item-desc">{item.description}</p>}
+        <h3 id="add-item-title">
+          {mode === "edit" ? t("placeOrder.editItemInCart") : item.name}
+        </h3>
+        {mode === "edit" ? (
+          <p className="dd-item-desc muted">{item.name}</p>
+        ) : null}
+        {item.description && mode === "add" ? (
+          <p className="dd-item-desc">{item.description}</p>
+        ) : null}
 
         {sizes.length > 0 ? (
           <>
@@ -149,17 +185,49 @@ export function AddToCartModal({ item, onAdd, onClose }: AddToCartModalProps) {
           />
         </label>
 
+        <div className="dd-modal-qty">
+          <span className="dd-modal-qty-label">{t("placeOrder.quantity")}</span>
+          <div className="dd-qty-control dd-modal-qty-control">
+            <button
+              type="button"
+              className="dd-qty-btn"
+              onClick={() => setQuantity((value) => Math.max(1, value - 1))}
+              disabled={quantity <= 1}
+              aria-label={t("placeOrder.decreaseQty")}
+            >
+              −
+            </button>
+            <span className="dd-qty-value">{quantity}</span>
+            <button
+              type="button"
+              className="dd-qty-btn"
+              onClick={() => setQuantity((value) => value + 1)}
+              aria-label={t("placeOrder.increaseQty")}
+            >
+              +
+            </button>
+          </div>
+        </div>
+
         <div className="dd-modal-footer">
           <p className="dd-modal-total">
-            {t("placeOrder.itemTotal", { amount: formatMoney(unitPrice) })}
+            {quantity > 1
+              ? t("placeOrder.lineTotal", {
+                  amount: formatMoney(lineTotal),
+                  each: formatMoney(unitPrice),
+                  count: String(quantity),
+                })
+              : t("placeOrder.itemTotal", { amount: formatMoney(lineTotal) })}
           </p>
           <button
             type="button"
             className="btn btn-brand btn-block"
-            onClick={handleAdd}
+            onClick={handleConfirm}
             disabled={sizeMissing}
           >
-            {t("common.add")} · {formatMoney(unitPrice)}
+            {mode === "edit"
+              ? `${t("common.save")} · ${formatMoney(lineTotal)}`
+              : `${t("common.add")} · ${formatMoney(lineTotal)}`}
           </button>
         </div>
       </div>

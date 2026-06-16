@@ -9,6 +9,8 @@ import {
 export type CartLineView = {
   key: string;
   item: MenuItem;
+  optionIds: string[];
+  sizeId: string | null;
   selectedOptions: MenuItemOption[];
   selectedSize?: MenuItemSize | null;
   preferences?: string;
@@ -22,6 +24,7 @@ type CartPanelProps = {
   canPlace: boolean;
   submitting: boolean;
   onChangeQuantity: (key: string, delta: number) => void;
+  onEdit: (line: CartLineView) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
   className?: string;
@@ -33,6 +36,7 @@ export function CartPanel({
   canPlace,
   submitting,
   onChangeQuantity,
+  onEdit,
   onRemove,
   onCheckout,
   className = "",
@@ -110,6 +114,13 @@ export function CartPanel({
                     </button>
                     <button
                       type="button"
+                      className="dd-edit-btn"
+                      onClick={() => onEdit(line)}
+                    >
+                      {t("common.edit")}
+                    </button>
+                    <button
+                      type="button"
                       className="dd-remove-btn"
                       onClick={() => onRemove(line.key)}
                     >
@@ -133,7 +144,7 @@ export function CartPanel({
                 disabled={submitting}
                 onClick={onCheckout}
               >
-                {submitting ? t("placeOrder.placing") : t("placeOrder.placeOrder")}
+                {submitting ? t("placeOrder.placing") : t("placeOrder.checkout")}
               </button>
             )}
           </div>

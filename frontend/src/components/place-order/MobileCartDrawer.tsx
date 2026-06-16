@@ -13,6 +13,7 @@ type MobileCartDrawerProps = {
   onOpen: () => void;
   onClose: () => void;
   onChangeQuantity: (key: string, delta: number) => void;
+  onEdit: (line: ResolvedCartLine) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
 };
@@ -43,6 +44,7 @@ export function MobileCartDrawer({
   open,
   onClose,
   onChangeQuantity,
+  onEdit,
   onRemove,
   onCheckout,
 }: Omit<MobileCartDrawerProps, "itemCount" | "onOpen">) {
@@ -67,6 +69,7 @@ export function MobileCartDrawer({
           canPlace={canPlace}
           submitting={submitting}
           onChangeQuantity={onChangeQuantity}
+          onEdit={onEdit}
           onRemove={onRemove}
           onCheckout={onCheckout}
         />

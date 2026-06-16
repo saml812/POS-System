@@ -3,13 +3,17 @@ import type { MenuItem } from "../../types";
 import { formatMoney } from "../../utils/order";
 
 const CATEGORY_ICONS: Record<string, string> = {
-  appetizers: "🥗",
+  "chefs-specialties": "👨‍🍳",
+  "special-combo": "🍱",
+  "appetizers-sides": "🥟",
   soups: "🍲",
-  combos: "🍱",
-  sides: "🍟",
-  mains: "🍕",
-  drinks: "🥤",
-  desserts: "🍰",
+  "fried-rice": "🍚",
+  "lo-mein": "🍜",
+  vegetable: "🥦",
+  chicken: "🍗",
+  pork: "🥩",
+  beef: "🥩",
+  shrimp: "🦐",
 };
 
 type MenuItemCardProps = {

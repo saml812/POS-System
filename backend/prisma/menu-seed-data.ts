@@ -59,7 +59,7 @@ const FRIED_RICE_SWAPS = [
   { name: "Chicken Fried Rice", price: 3.5, key: "chicken" },
   { name: "Ham Fried Rice", price: 3.5, key: "ham" },
   { name: "Shrimp Fried Rice", price: 3.5, key: "shrimp" },
-  { name: "House Fried Rice", price: 3.5, key: "house" },
+  { name: "House Fried Rice", price: 4, key: "house" },
   { name: "Beef Fried Rice", price: 4, key: "beef" },
 ] as const;
 
@@ -360,7 +360,7 @@ export const Menu: SeedCategory[] = [
       fixedItem("cheese-wonton", "A2", "Cheese Wonton (6)", "", 5.5, 1),
       fixedItem("fried-shrimp", "A3", "Fried Shrimp (10)", "", 10, 2),
       fixedItem("app-chicken-on-stick", "A4", "Chicken on Stick (5)", "", 7, 3),
-      fixedItem("app-chicken-wings", "A5", "Chicken Wings (5)", "", 7.5, 4),
+      fixedItem("app-chicken-wings", "A5", "Chicken Wings (6)", "", 7.5, 4),
       fixedItem("sweet-donuts", "A6", "Sweet Donuts (10)", "", 5, 5),
       fixedItem("steam-dumplings", "A7", "Steam Dumplings (10)", "", 9, 6),
       fixedItem("fried-dumplings", "A8", "Fried Dumplings (10)", "", 9, 7),
@@ -369,9 +369,9 @@ export const Menu: SeedCategory[] = [
       fixedItem("hot-sauce-side", null, "Hot Sauce", "", 1, 10),
       fixedItem("fried-rice-side", null, "Fried Rice", "", 3.5, 11),
       fixedItem("crispy-noodles", null, "Crispy Noodles", "", 1.5, 12),
-      fixedItem("yum-yum-sauce", null, "Yum Yum Sauce", "", 2, 13),
-      fixedItem("red-sweet-sour-sauce", null, "Red Sweet & Sour Sauce", "", 2, 14),
-      fixedItem("brown-sweet-sour-sauce", null, "Brown Sweet & Sour Sauce", "", 2, 15),
+      sizedItem("yum-yum-sauce", null, "Yum Yum Sauce", "", 1, 2, 13),
+      sizedItem("red-sweet-sour-sauce", null, "Red Sweet & Sour Sauce", "", 1, 2, 14),
+      sizedItem("brown-sweet-sour-sauce", null, "Brown Sweet & Sour Sauce", "", 1, 2, 15),
     ],
   },
   {
@@ -599,4 +599,14 @@ export const Menu: SeedCategory[] = [
       sizedItem("sweet-sour-shrimp", "75", "Sweet & Sour Shrimp", WITH_RICE, 9, 12, 4, "with-rice"),
     ],
   },
+  {
+    id: "drinks",
+    name: "Drinks",
+    sortOrder: 11,
+    items: [
+      fixedItem("water", null, "Water", "", 1, 0),
+      fixedItem("soda", null, "Soda", "", 2, 1),
+      fixedItem("sweet-tea", null, "Sweet Tea", "", 2.5, 2),
+    ]
+  }
 ];

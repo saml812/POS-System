@@ -5,6 +5,7 @@ import passport from "./lib/passport.js";
 import { sessionMiddleware, sessionStore } from "./lib/session.js";
 import { initSocket } from "./lib/socket.js";
 import { ENV } from "./lib/env.js";
+import { isClientOrigin } from "./lib/clientOrigins.js";
 import { connectDB, disconnectDB } from "./lib/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import menuRoutes from "./routes/menu.routes.js";
@@ -13,6 +14,7 @@ import kitchenRoutes from "./routes/kitchen.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import { refreshTicketResetConfig } from "./lib/tickets.js";
+import { refreshPaymentConfig } from "./lib/paymentConfig.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -21,9 +23,15 @@ const PORT = ENV.PORT || 3000;
 
 app.use(
   cors({
-    origin: ENV.CLIENT_URL ?? "http://localhost:5173",
+    origin(origin, callback) {
+      if (isClientOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked origin: ${origin}`));
+      }
+    },
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
@@ -48,6 +56,7 @@ initSocket(httpServer);
 const server = httpServer.listen(PORT, async () => {
   await connectDB();
   await refreshTicketResetConfig();
+  await refreshPaymentConfig();
   console.log(`API running on http://localhost:${PORT}`);
 });
 
