@@ -1,120 +1,128 @@
-import net from "node:net";
 import { getPaymentConfig } from "../lib/paymentConfig.js";
 import { appError } from "../lib/appError.js";
+import * as datacap from "./datacap.service.js";
 
-const ESC = "\x1b";
-const INIT = ESC + "@";
-const CUT = ESC + "i";
-const LF = "\n";
-const PRINTER_TIMEOUT_MS = 5000;
+const RECEIPT_WIDTH = 40;
+const MAX_LINES = 80;
 
 function money(amount) {
   return `$${Number(amount).toFixed(2)}`;
 }
 
-function line(text = "") {
-  return `${text}${LF}`;
+function truncate(text, max) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
 }
 
-function center(text, width = 32) {
+function center(text, width = RECEIPT_WIDTH) {
   if (text.length >= width) return text.slice(0, width);
   const pad = Math.floor((width - text.length) / 2);
   return " ".repeat(pad) + text;
 }
 
-function sendToPrinter(buffer) {
-  const config = getPaymentConfig();
-
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(
-      { host: config.printerIp, port: config.printerPort },
-      () => {
-        socket.write(buffer, () => {
-          socket.end();
-          resolve({ printed: true });
-        });
-      },
-    );
-
-    socket.setTimeout(PRINTER_TIMEOUT_MS);
-    socket.on("timeout", () => {
-      socket.destroy();
-      reject(appError("Receipt printer timed out", 504));
-    });
-    socket.on("error", (err) => {
-      reject(appError(`Receipt printer error: ${err.message}`, 503));
-    });
-  });
+function padLine(left, right, width = RECEIPT_WIDTH) {
+  const spaces = width - left.length - right.length;
+  if (spaces < 1) return truncate(`${left} ${right}`, width);
+  return `${left}${" ".repeat(spaces)}${right}`;
 }
 
-function buildReceiptBuffer(order, config) {
-  const total = order.items.reduce(
+function isTerminalConfigured(config) {
+  return Boolean(config.terminalIp && config.merchantId);
+}
+
+export function buildOrderReceiptLines(order, config = getPaymentConfig()) {
+  const lines = [];
+  const storeName = config.storeName || "POS";
+
+  lines.push(center(storeName));
+  lines.push(center(`Ticket #${order.ticketNumber}`));
+  lines.push("");
+  lines.push("-".repeat(RECEIPT_WIDTH));
+
+  for (const item of order.items ?? []) {
+    const label = item.itemCode
+      ? `${item.quantity}x ${item.itemCode} ${item.name}`
+      : `${item.quantity}x ${item.name}`;
+    lines.push(truncate(label, RECEIPT_WIDTH));
+
+    if (item.sizeName) {
+      lines.push(`  ${truncate(item.sizeName, RECEIPT_WIDTH - 2)}`);
+    }
+
+    const itemOptions = item.options ?? [];
+    if (itemOptions.length > 0) {
+      const optionNames = itemOptions.map((option) => option.name).join(", ");
+      lines.push(`  ${truncate(optionNames, RECEIPT_WIDTH - 2)}`);
+    }
+
+    if (item.preferences?.trim()) {
+      lines.push(`  ${truncate(item.preferences.trim(), RECEIPT_WIDTH - 2)}`);
+    }
+
+    const lineTotal = Number(item.price) * item.quantity;
+    lines.push(padLine("", money(lineTotal)));
+  }
+
+  const total = (order.items ?? []).reduce(
     (sum, item) => sum + Number(item.price) * item.quantity,
     0,
   );
 
-  const lines = [
-    INIT,
-    line(center(config.storeName || "POS")),
-    line(center(`Ticket #${order.ticketNumber}`)),
-    line("-".repeat(32)),
-  ];
-
-  for (const item of order.items) {
-    const label = item.itemCode
-      ? `${item.quantity}x ${item.itemCode} ${item.name}`
-      : `${item.quantity}x ${item.name}`;
-    const price = money(Number(item.price) * item.quantity);
-    lines.push(line(label.slice(0, 24)));
-    if (item.sizeName) lines.push(line(`  ${item.sizeName}`));
-    lines.push(line(`  ${price}`));
-  }
-
-  lines.push(line("-".repeat(32)));
-  lines.push(line(`Total: ${money(total)}`));
+  lines.push("-".repeat(RECEIPT_WIDTH));
+  lines.push(padLine("Total", money(total)));
 
   if (order.paymentMethod === "CASH") {
-    lines.push(line("Paid: CASH"));
+    lines.push("Paid: CASH");
   } else if (order.paymentMethod === "CARD") {
-    lines.push(line("Paid: CARD"));
+    lines.push("Paid: CARD");
   } else if (order.paymentMethod === "SPLIT") {
-    lines.push(line(`Card: ${money(order.cardAmount ?? 0)}`));
-    lines.push(line(`Cash: ${money(order.cashAmount ?? 0)}`));
+    lines.push(`Card: ${money(order.cardAmount ?? 0)}`);
+    lines.push(`Cash: ${money(order.cashAmount ?? 0)}`);
   }
 
-  lines.push(line(""));
-  lines.push(line(center("Thank you!")));
-  lines.push(line(""));
-  lines.push(CUT);
+  lines.push("");
+  lines.push(center("Thank you!"));
 
-  return Buffer.from(lines.join(""), "ascii");
+  return lines.slice(0, MAX_LINES);
 }
 
 export async function printCustomerReceipt(order) {
   const config = getPaymentConfig();
 
-  if (config.printerType === "none" || !config.printerIp) {
+  if (!isTerminalConfigured(config)) {
     console.info(
-      "[receipt] skipped (not configured) ticket=%s",
+      "[receipt] skipped (terminal not configured) ticket=%s",
       order.ticketNumber,
     );
     return { printed: false, skipped: true };
   }
 
-  const buffer = buildReceiptBuffer(order, config);
-  return sendToPrinter(buffer);
+  const lines = buildOrderReceiptLines(order, config);
+  await datacap.runPrintReceipt({
+    lines,
+    ticketNumber: order.ticketNumber,
+  });
+
+  return { printed: true };
 }
 
 export async function printTestReceipt() {
   const config = getPaymentConfig();
-  if (config.printerType === "none" || !config.printerIp) {
-    throw appError("Receipt printer is not configured", 400);
+
+  if (!isTerminalConfigured(config)) {
+    throw appError("Payment terminal is not configured", 400);
   }
 
-  const buffer = Buffer.from(
-    `${INIT}${line(center(config.storeName || "POS"))}${line(center("Test receipt"))}${line("")}${CUT}`,
-    "ascii",
-  );
+  const lines = [
+    center(config.storeName || "POS"),
+    "",
+    center("Test receipt"),
+    "",
+    center("Terminal print OK"),
+    "",
+    center("Thank you!"),
+  ];
 
-  return sendToPrinter(buffer);
+  await datacap.runPrintReceipt({ lines, ticketNumber: "TEST" });
+  return { printed: true };
 }

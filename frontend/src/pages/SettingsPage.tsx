@@ -21,12 +21,8 @@ export function SettingsPage() {
   const [resetHour, setResetHour] = useState("0");
 
   const [terminalIp, setTerminalIp] = useState("");
-  const [terminalPort, setTerminalPort] = useState("80");
   const [merchantId, setMerchantId] = useState("");
   const [operationMode, setOperationMode] = useState("CERT");
-  const [printerType, setPrinterType] = useState("network");
-  const [printerIp, setPrinterIp] = useState("");
-  const [printerPort, setPrinterPort] = useState("9100");
   const [storeName, setStoreName] = useState("POS");
 
   const applySettings = useCallback((next: Settings) => {
@@ -35,12 +31,8 @@ export function SettingsPage() {
     setResetHour(String(next.ticketReset.resetHour));
 
     setTerminalIp(next.payment.terminal.ip ?? "");
-    setTerminalPort(String(next.payment.terminal.port));
     setMerchantId(next.payment.terminal.merchantId ?? "");
     setOperationMode(next.payment.terminal.operationMode);
-    setPrinterType(next.payment.receipt.printerType);
-    setPrinterIp(next.payment.receipt.printerIp ?? "");
-    setPrinterPort(String(next.payment.receipt.printerPort));
     setStoreName(next.payment.receipt.storeName);
   }, []);
 
@@ -94,12 +86,8 @@ export function SettingsPage() {
       async () => {
         const result = await settingsApi.updatePaymentSettings({
           terminalIp: terminalIp.trim(),
-          terminalPort: Number(terminalPort),
           merchantId: merchantId.trim(),
           operationMode,
-          printerType,
-          printerIp: printerIp.trim(),
-          printerPort: Number(printerPort),
           storeName: storeName.trim(),
         });
         applySettings(result.settings);
@@ -224,18 +212,9 @@ export function SettingsPage() {
                     placeholder="192.168.1.50"
                     disabled={paymentBusy}
                   />
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.terminalPort")}</span>
-                  <input
-                    className="em-input"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={terminalPort}
-                    onChange={(e) => setTerminalPort(e.target.value)}
-                    disabled={paymentBusy}
-                  />
+                  <span className="settings-hint muted">
+                    {t("settings.terminalHttpsNote")}
+                  </span>
                 </label>
                 <label className="em-field">
                   <span className="em-field-label">{t("settings.merchantId")}</span>
@@ -277,41 +256,8 @@ export function SettingsPage() {
               </div>
 
               <h4 className="settings-subheading">{t("settings.receiptTitle")}</h4>
+              <p className="muted settings-hint">{t("settings.receiptDesc")}</p>
               <div className="em-form-grid">
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.printerType")}</span>
-                  <select
-                    className="em-input"
-                    value={printerType}
-                    onChange={(e) => setPrinterType(e.target.value)}
-                    disabled={paymentBusy}
-                  >
-                    <option value="network">{t("settings.printerNetwork")}</option>
-                    <option value="none">{t("settings.printerNone")}</option>
-                  </select>
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.printerIp")}</span>
-                  <input
-                    className="em-input"
-                    value={printerIp}
-                    onChange={(e) => setPrinterIp(e.target.value)}
-                    placeholder="192.168.1.60"
-                    disabled={paymentBusy || printerType === "none"}
-                  />
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.printerPort")}</span>
-                  <input
-                    className="em-input"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={printerPort}
-                    onChange={(e) => setPrinterPort(e.target.value)}
-                    disabled={paymentBusy || printerType === "none"}
-                  />
-                </label>
                 <label className="em-field">
                   <span className="em-field-label">{t("settings.storeName")}</span>
                   <input
@@ -327,7 +273,9 @@ export function SettingsPage() {
                 <button
                   type="button"
                   className="btn"
-                  disabled={paymentBusy || printerType === "none"}
+                  disabled={
+                    paymentBusy || !settings.payment.terminal.configured
+                  }
                   onClick={() => handleTestReceipt()}
                 >
                   {t("settings.testReceipt")}

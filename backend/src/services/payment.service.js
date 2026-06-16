@@ -99,7 +99,7 @@ async function runCardCapture(order, cardAmount) {
 
 async function safePrintReceipt(order) {
   try {
-    await printCustomerReceipt(order);
+    await withTerminalLock(() => printCustomerReceipt(order));
   } catch (err) {
     console.error("[receipt] print failed", order.id, err.message);
   }

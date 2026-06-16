@@ -14,9 +14,6 @@ export type PaymentTerminalSettings = {
 };
 
 export type PaymentReceiptSettings = {
-  printerType: string;
-  printerIp: string | null;
-  printerPort: number;
   storeName: string;
   configured: boolean;
 };
@@ -51,12 +48,8 @@ export function updateTicketReset(data: {
 
 export function updatePaymentSettings(data: {
   terminalIp?: string;
-  terminalPort?: number;
   merchantId?: string;
   operationMode?: string;
-  printerType?: string;
-  printerIp?: string;
-  printerPort?: number;
   storeName?: string;
 }) {
   return apiRequest<{ settings: Settings }>("/settings/payment", {

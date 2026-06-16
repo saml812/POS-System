@@ -1,4 +1,5 @@
 import { appError } from "../lib/appError.js";
+import { withTerminalLock } from "../lib/terminalMutex.js";
 import {
   getPublicSettings,
   updateTicketResetSettings,
@@ -45,5 +46,7 @@ export async function testTerminal() {
 }
 
 export async function testReceiptPrinter() {
-  return withAppError(() => printTestReceipt());
+  return withAppError(() =>
+    withTerminalLock(() => printTestReceipt()),
+  );
 }

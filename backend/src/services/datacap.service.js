@@ -1,8 +1,9 @@
-import http from "node:http";
+import https from "node:https";
 import { getPaymentConfig } from "../lib/paymentConfig.js";
 import { appError } from "../lib/appError.js";
 
 const TERMINAL_TIMEOUT_MS = 120_000;
+const TEST_TIMEOUT_MS = 5000;
 
 function escapeXml(value) {
   return String(value)
@@ -79,6 +80,17 @@ export function buildReturnXml({
   return `<TStream><Transaction>${tag("MerchantID", merchantId)}${tag("TranCode", "EMVReturn")}${tag("InvoiceNo", invoiceNo)}${tag("RefNo", refNo)}<Amount><Purchase>${formatAmount(amount)}</Purchase></Amount>${tag("UserTrace", `Ticket ${ticketNumber}`)}${tag("OperationMode", operationMode)}</Transaction></TStream>`;
 }
 
+export function buildPrintReceiptXml({ merchantId, operationMode, lines }) {
+  const printData = (lines ?? [])
+    .map((text, index) => {
+      const lineNo = index + 1;
+      return `<Line${lineNo}>${escapeXml(text)}</Line${lineNo}>`;
+    })
+    .join("");
+
+  return `<TStream><Transaction>${tag("MerchantID", merchantId)}${tag("TranCode", "PrintReceipt")}${tag("OperationMode", operationMode)}<PrintData>${printData}</PrintData></Transaction></TStream>`;
+}
+
 function extractTag(xml, tagName) {
   const re = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i");
   const match = xml.match(re);
@@ -128,6 +140,48 @@ function logPaymentEvent(details) {
   );
 }
 
+function terminalRequestOptions(config, { method, path, timeout }) {
+  return {
+    hostname: config.terminalIp,
+    port: config.terminalPort,
+    path: path ?? "/",
+    method,
+    timeout,
+    rejectUnauthorized: config.terminalTlsStrict,
+  };
+}
+
+function requestTerminal(config, options, body) {
+  const requestOptions = terminalRequestOptions(config, options);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(requestOptions, (res) => {
+      let data = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+      res.on("end", () => {
+        resolve({ statusCode: res.statusCode, body: data });
+      });
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      reject(appError("Payment terminal timed out", 504));
+    });
+
+    req.on("error", (err) => {
+      reject(appError(`Payment terminal unreachable (HTTPS): ${err.message}`, 503));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
 export function postToTerminal(xmlBody, { tranCode, orderId, ticketNumber, amount } = {}) {
   const config = getPaymentConfig();
 
@@ -136,61 +190,39 @@ export function postToTerminal(xmlBody, { tranCode, orderId, ticketNumber, amoun
   }
 
   return new Promise((resolve, reject) => {
-    const req = http.request(
+    requestTerminal(
+      config,
       {
-        hostname: config.terminalIp,
-        port: config.terminalPort,
-        path: "/",
         method: "POST",
-        headers: {
-          "Content-Type": "application/xml",
-          "Content-Length": Buffer.byteLength(xmlBody),
-        },
+        path: "/",
         timeout: TERMINAL_TIMEOUT_MS,
       },
-      (res) => {
-        let data = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk) => {
-          data += chunk;
-        });
-        res.on("end", () => {
-          try {
-            const parsed = parseDatacapResponse(data);
-            logPaymentEvent({
-              orderId,
-              ticketNumber,
-              tranCode,
-              cmdStatus: parsed.cmdStatus,
-              textResponse: parsed.textResponse,
-              authCode: parsed.authCode,
-              amount,
-            });
+      xmlBody,
+    )
+      .then(({ body }) => {
+        try {
+          const parsed = parseDatacapResponse(body);
+          logPaymentEvent({
+            orderId,
+            ticketNumber,
+            tranCode,
+            cmdStatus: parsed.cmdStatus,
+            textResponse: parsed.textResponse,
+            authCode: parsed.authCode,
+            amount,
+          });
 
-            if (!parsed.cmdStatus) {
-              reject(appError("Invalid response from payment terminal", 502));
-              return;
-            }
-
-            resolve(parsed);
-          } catch (err) {
-            reject(err);
+          if (!parsed.cmdStatus) {
+            reject(appError("Invalid response from payment terminal", 502));
+            return;
           }
-        });
-      },
-    );
 
-    req.on("timeout", () => {
-      req.destroy();
-      reject(appError("Payment terminal timed out", 504));
-    });
-
-    req.on("error", (err) => {
-      reject(appError(`Payment terminal unreachable: ${err.message}`, 503));
-    });
-
-    req.write(xmlBody);
-    req.end();
+          resolve(parsed);
+        } catch (err) {
+          reject(err);
+        }
+      })
+      .catch(reject);
   });
 }
 
@@ -295,33 +327,42 @@ export async function runReturn(order, refNo) {
   return result;
 }
 
+export async function runPrintReceipt({ lines, ticketNumber } = {}) {
+  const config = getPaymentConfig();
+  const xml = buildPrintReceiptXml({
+    merchantId: config.merchantId,
+    operationMode: config.operationMode,
+    lines,
+  });
+
+  const result = await postToTerminal(xml, {
+    tranCode: "PrintReceipt",
+    ticketNumber,
+  });
+
+  if (!result.approved) {
+    throw appError(result.textResponse || "Receipt print failed", 502);
+  }
+
+  return result;
+}
+
 export async function testTerminalConnection() {
   const config = getPaymentConfig();
   if (!config.terminalIp) {
     throw appError("Terminal IP is not configured", 400);
   }
 
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        hostname: config.terminalIp,
-        port: config.terminalPort,
-        path: "/",
-        method: "GET",
-        timeout: 5000,
-      },
-      (res) => {
-        res.resume();
-        resolve({ reachable: true, statusCode: res.statusCode });
-      },
-    );
-    req.on("timeout", () => {
-      req.destroy();
-      reject(appError("Terminal did not respond", 504));
-    });
-    req.on("error", (err) => {
-      reject(appError(`Terminal unreachable: ${err.message}`, 503));
-    });
-    req.end();
+  const { statusCode } = await requestTerminal(config, {
+    method: "GET",
+    path: "/",
+    timeout: TEST_TIMEOUT_MS,
   });
+
+  return {
+    reachable: true,
+    statusCode,
+    secure: true,
+    port: config.terminalPort,
+  };
 }
