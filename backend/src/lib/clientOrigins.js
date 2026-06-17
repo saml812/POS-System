@@ -7,7 +7,10 @@ export function getClientOrigins() {
   ]);
 
   if (ENV.CLIENT_URL) {
-    origins.add(ENV.CLIENT_URL);
+    for (const url of ENV.CLIENT_URL.split(",")) {
+      const trimmed = url.trim();
+      if (trimmed) origins.add(trimmed);
+    }
   }
 
   return [...origins];

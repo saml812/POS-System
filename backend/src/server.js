@@ -22,6 +22,8 @@ const app = express();
 const httpServer = createServer(app);
 const PORT = ENV.PORT || 3000;
 
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     origin(origin, callback) {

@@ -7,4 +7,5 @@ export const ENV = {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
   CLIENT_URL: process.env.CLIENT_URL,
+  COOKIE_SECURE: process.env.COOKIE_SECURE === "true",
 };

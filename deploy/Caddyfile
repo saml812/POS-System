@@ -1,0 +1,28 @@
+#     caddy run --config deploy/Caddyfile
+{
+	auto_https off
+}
+
+:80 {
+	encode gzip zstd
+
+	# REST API
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle /socket.io/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		root * {$POS_DIST:frontend/dist}
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file logs/caddy.log
+		format console
+	}
+}
