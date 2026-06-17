@@ -1,0 +1,15 @@
+pm2 start deploy/ecosystem.config.cjs
+pm2 stop all
+pm2 restart all
+pm2 delete all
+
+pm2 restart pos-backend
+pm2 restart pos-proxy
+
+pm2 status
+pm2 logs
+pm2 flush
+pm2 monit
+
+pm2 save
+pm2-startup install

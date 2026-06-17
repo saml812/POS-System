@@ -1,7 +1,3 @@
-//     pm2 start deploy/ecosystem.config.cjs
-//     pm2 save
-//     pm2 startup
-
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
