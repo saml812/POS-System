@@ -2,6 +2,11 @@
 //     pm2 save
 //     pm2 startup
 
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const backendDir = path.join(root, "backend");
+
 module.exports = {
   apps: [
     {
