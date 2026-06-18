@@ -23,6 +23,9 @@ export function SettingsPage() {
   const [printerType, setPrinterType] = useState("network");
   const [printerIp, setPrinterIp] = useState("");
   const [printerPort, setPrinterPort] = useState("9100");
+  const [printerName, setPrinterName] = useState("");
+  const [printerComPort, setPrinterComPort] = useState("");
+  const [printerBaudRate, setPrinterBaudRate] = useState("9600");
   const [storeName, setStoreName] = useState("POS");
 
   const applySettings = useCallback((next: Settings) => {
@@ -32,6 +35,9 @@ export function SettingsPage() {
     setPrinterType(next.receipt.printerType);
     setPrinterIp(next.receipt.printerIp ?? "");
     setPrinterPort(String(next.receipt.printerPort));
+    setPrinterName(next.receipt.printerName ?? "");
+    setPrinterComPort(next.receipt.printerComPort ?? "");
+    setPrinterBaudRate(String(next.receipt.printerBaudRate));
     setStoreName(next.receipt.storeName);
   }, []);
 
@@ -87,6 +93,9 @@ export function SettingsPage() {
           printerType,
           printerIp: printerIp.trim(),
           printerPort: Number(printerPort),
+          printerName: printerName.trim(),
+          printerComPort: printerComPort.trim(),
+          printerBaudRate: Number(printerBaudRate),
           storeName: storeName.trim(),
         });
         applySettings(result.settings);
@@ -105,6 +114,10 @@ export function SettingsPage() {
   const displayError = error || receiptAction.error;
   const displaySuccess = success || receiptAction.success;
   const receiptBusy = receiptAction.busy;
+  const printerDisabled = receiptBusy || printerType === "none";
+  const showNetworkFields = printerType === "network";
+  const showUsbFields = printerType === "usb";
+  const showSerialFields = printerType === "serial";
 
   return (
     <div className="page em-page settings-page">
@@ -203,31 +216,80 @@ export function SettingsPage() {
                     disabled={receiptBusy}
                   >
                     <option value="network">{t("settings.printerNetwork")}</option>
+                    <option value="usb">{t("settings.printerUsb")}</option>
+                    <option value="serial">{t("settings.printerSerial")}</option>
                     <option value="none">{t("settings.printerNone")}</option>
                   </select>
                 </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.printerIp")}</span>
-                  <input
-                    className="em-input"
-                    value={printerIp}
-                    onChange={(e) => setPrinterIp(e.target.value)}
-                    placeholder="192.168.1.60"
-                    disabled={receiptBusy || printerType === "none"}
-                  />
-                </label>
-                <label className="em-field">
-                  <span className="em-field-label">{t("settings.printerPort")}</span>
-                  <input
-                    className="em-input"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={printerPort}
-                    onChange={(e) => setPrinterPort(e.target.value)}
-                    disabled={receiptBusy || printerType === "none"}
-                  />
-                </label>
+                {showNetworkFields ? (
+                  <>
+                    <label className="em-field">
+                      <span className="em-field-label">{t("settings.printerIp")}</span>
+                      <input
+                        className="em-input"
+                        value={printerIp}
+                        onChange={(e) => setPrinterIp(e.target.value)}
+                        placeholder="192.168.1.60"
+                        disabled={printerDisabled}
+                      />
+                    </label>
+                    <label className="em-field">
+                      <span className="em-field-label">{t("settings.printerPort")}</span>
+                      <input
+                        className="em-input"
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={printerPort}
+                        onChange={(e) => setPrinterPort(e.target.value)}
+                        disabled={printerDisabled}
+                      />
+                    </label>
+                  </>
+                ) : null}
+                {showUsbFields ? (
+                  <label className="em-field em-field-full">
+                    <span className="em-field-label">{t("settings.printerName")}</span>
+                    <input
+                      className="em-input"
+                      value={printerName}
+                      onChange={(e) => setPrinterName(e.target.value)}
+                      placeholder={t("settings.printerNamePlaceholder")}
+                      disabled={printerDisabled}
+                    />
+                    <span className="settings-hint muted">
+                      {t("settings.printerUsbHint")}
+                    </span>
+                  </label>
+                ) : null}
+                {showSerialFields ? (
+                  <>
+                    <label className="em-field">
+                      <span className="em-field-label">{t("settings.printerComPort")}</span>
+                      <input
+                        className="em-input"
+                        value={printerComPort}
+                        onChange={(e) => setPrinterComPort(e.target.value)}
+                        placeholder="COM5"
+                        disabled={printerDisabled}
+                      />
+                    </label>
+                    <label className="em-field">
+                      <span className="em-field-label">{t("settings.printerBaudRate")}</span>
+                      <input
+                        className="em-input"
+                        type="number"
+                        min={1}
+                        value={printerBaudRate}
+                        onChange={(e) => setPrinterBaudRate(e.target.value)}
+                        disabled={printerDisabled}
+                      />
+                      <span className="settings-hint muted">
+                        {t("settings.printerSerialHint")}
+                      </span>
+                    </label>
+                  </>
+                ) : null}
                 <label className="em-field">
                   <span className="em-field-label">{t("settings.storeName")}</span>
                   <input

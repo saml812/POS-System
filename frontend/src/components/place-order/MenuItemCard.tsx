@@ -10,9 +10,9 @@ const CATEGORY_ICONS: Record<string, string> = {
   "fried-rice": "🍚",
   "lo-mein": "🍜",
   vegetable: "🥦",
-  chicken: "🍗",
-  pork: "🥩",
-  beef: "🥩",
+  chicken: "🐔",
+  pork: "🐷",
+  beef: "🐮",
   shrimp: "🦐",
   drinks: "🥤",
 };

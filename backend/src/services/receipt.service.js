@@ -1,10 +1,16 @@
 import net from "node:net";
-import { getReceiptConfig } from "../lib/receiptConfig.js";
+import { SerialPort } from "serialport";
+import {
+  getReceiptConfig,
+  isReceiptConfigured,
+} from "../lib/receiptConfig.js";
+import { sendRawToWindowsPrinter } from "../lib/windowsRawPrinter.js";
 import { appError } from "../lib/appError.js";
 
 const ESC = "\x1b";
+const GS = "\x1d";
 const INIT = ESC + "@";
-const CUT = ESC + "i";
+const CUT = GS + "V\x00";
 const LF = "\n";
 const PRINTER_TIMEOUT_MS = 5000;
 const RECEIPT_WIDTH = 32;
@@ -34,9 +40,7 @@ function padLine(left, right, width = RECEIPT_WIDTH) {
   return `${left}${" ".repeat(spaces)}${right}`;
 }
 
-function sendToPrinter(buffer) {
-  const config = getReceiptConfig();
-
+function sendToNetworkPrinter(buffer, config) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(
       { host: config.printerIp, port: config.printerPort },
@@ -57,6 +61,91 @@ function sendToPrinter(buffer) {
       reject(appError(`Receipt printer error: ${err.message}`, 503));
     });
   });
+}
+
+async function sendToUsbPrinter(buffer, config) {
+  try {
+    await sendRawToWindowsPrinter(
+      config.printerName,
+      buffer,
+      PRINTER_TIMEOUT_MS,
+    );
+    return { printed: true };
+  } catch (err) {
+    throw appError(
+      `USB printer error (${config.printerName}): ${err.message}`,
+      503,
+    );
+  }
+}
+
+function sendToSerialPrinter(buffer, config) {
+  return new Promise((resolve, reject) => {
+    const port = new SerialPort({
+      path: config.printerComPort,
+      baudRate: config.printerBaudRate,
+      autoOpen: false,
+    });
+
+    const timeout = setTimeout(() => {
+      port.close();
+      reject(appError("Receipt printer timed out", 504));
+    }, PRINTER_TIMEOUT_MS);
+
+    const fail = (message) => {
+      clearTimeout(timeout);
+      reject(appError(message, 503));
+    };
+
+    port.open((err) => {
+      if (err) {
+        fail(
+          `Serial printer error on ${config.printerComPort}: ${err.message}`,
+        );
+        return;
+      }
+
+      port.write(buffer, (writeErr) => {
+        if (writeErr) {
+          port.close();
+          fail(`Serial printer write error: ${writeErr.message}`);
+          return;
+        }
+
+        port.drain((drainErr) => {
+          if (drainErr) {
+            port.close();
+            fail(`Serial printer drain error: ${drainErr.message}`);
+            return;
+          }
+
+          port.close((closeErr) => {
+            clearTimeout(timeout);
+            if (closeErr) {
+              fail(`Serial printer close error: ${closeErr.message}`);
+              return;
+            }
+            resolve({ printed: true });
+          });
+        });
+      });
+    });
+  });
+}
+
+function sendToPrinter(buffer) {
+  const config = getReceiptConfig();
+
+  switch (config.printerType) {
+    case "network":
+      return sendToNetworkPrinter(buffer, config);
+    case "usb":
+      return sendToUsbPrinter(buffer, config);
+    case "serial":
+      return sendToSerialPrinter(buffer, config);
+    default:
+      throw appError("Receipt printer is not configured", 400);
+  }
 }
 
 export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
@@ -120,10 +209,17 @@ function buildReceiptBuffer(order, config) {
   return Buffer.from(`${INIT}${lines.map(line).join("")}${CUT}`, "ascii");
 }
 
+function buildTestReceiptBuffer(config) {
+  return Buffer.from(
+    `${INIT}${line(center(config.storeName || "POS"))}${line(center("Test receipt"))}${line("")}${CUT}`,
+    "ascii",
+  );
+}
+
 export async function printCustomerReceipt(order) {
   const config = getReceiptConfig();
 
-  if (config.printerType === "none" || !config.printerIp) {
+  if (!isReceiptConfigured(config)) {
     console.info(
       "[receipt] skipped (not configured) ticket=%s",
       order.ticketNumber,
@@ -137,14 +233,10 @@ export async function printCustomerReceipt(order) {
 
 export async function printTestReceipt() {
   const config = getReceiptConfig();
-  if (config.printerType === "none" || !config.printerIp) {
+  if (!isReceiptConfigured(config)) {
     throw appError("Receipt printer is not configured", 400);
   }
 
-  const buffer = Buffer.from(
-    `${INIT}${line(center(config.storeName || "POS"))}${line(center("Test receipt"))}${line("")}${CUT}`,
-    "ascii",
-  );
-
+  const buffer = buildTestReceiptBuffer(config);
   return sendToPrinter(buffer);
 }

@@ -1,3 +1,13 @@
+import {
+  bi,
+  CATEGORY_NAMES,
+  EFY_STYLE_ZH,
+  extraIngredientName,
+  FRIED_RICE_SWAP_ZH,
+  MENU_COPY,
+  noIngredientName,
+} from "./menu-bilingual.js";
+
 export type SeedModifier = {
   id: string;
   name: string;
@@ -49,6 +59,8 @@ const CUSTOMIZABLE_INGREDIENTS = [
   "Noodles",
 ] as const;
 
+const WINGS_STYLE_EXTRA = 1;
+
 const PROTEIN_EXTRA_PRICE = 3.5;
 const MEATS_EXTRA_PRICE = 4.5;
 const BEEF_EXTRA_PRICE = 4;
@@ -57,13 +69,13 @@ const SAUCE_EXTRA_PRICE = 1;
 const DEFAULT_EXTRA_PRICE = 1.5;
 
 const FRIED_RICE_SWAPS = [
-  { name: "Vegetable Fried Rice", price: 3.5, key: "veg" },
-  { name: "Pork Fried Rice", price: 3.5, key: "pork" },
-  { name: "Chicken Fried Rice", price: 3.5, key: "chicken" },
-  { name: "Ham Fried Rice", price: 3.5, key: "ham" },
-  { name: "Shrimp Fried Rice", price: 3.5, key: "shrimp" },
-  { name: "House Fried Rice", price: 4, key: "house" },
-  { name: "Beef Fried Rice", price: 4, key: "beef" },
+  { name: "Vegetable Fried Rice", key: "veg", price: 3.5 },
+  { name: "Pork Fried Rice", key: "pork", price: 3.5 },
+  { name: "Chicken Fried Rice", key: "chicken", price: 3.5 },
+  { name: "Ham Fried Rice", key: "ham", price: 3.5 },
+  { name: "Shrimp Fried Rice", key: "shrimp", price: 3.5 },
+  { name: "House Fried Rice", key: "house", price: 4 },
+  { name: "Beef Fried Rice", key: "beef", price: 4 },
 ] as const;
 
 function slug(text: string) {
@@ -112,13 +124,13 @@ function ingredientOptions(itemId: string, startOrder: number): SeedModifier[] {
     options.push(
       {
         id: `${itemId}-extra-${key}`,
-        name: `Extra ${ingredient}`,
+        name: extraIngredientName(ingredient),
         priceDelta: extraPrice(ingredient),
         sortOrder: sortOrder++,
       },
       {
         id: `${itemId}-no-${key}`,
-        name: `No ${ingredient}`,
+        name: noIngredientName(ingredient),
         priceDelta: 0,
         sortOrder: sortOrder++,
       },
@@ -128,13 +140,42 @@ function ingredientOptions(itemId: string, startOrder: number): SeedModifier[] {
   return options;
 }
 
+function wingsStyleOptions(itemId: string, startOrder: number): SeedModifier[] {
+  return [
+    {
+      id: `${itemId}-wings-flats`,
+      name: MENU_COPY.allFlats,
+      priceDelta: WINGS_STYLE_EXTRA,
+      sortOrder: startOrder,
+      group: "wings",
+    },
+    {
+      id: `${itemId}-wings-drums`,
+      name: MENU_COPY.allDrums,
+      priceDelta: WINGS_STYLE_EXTRA,
+      sortOrder: startOrder + 1,
+      group: "wings",
+    },
+  ];
+}
+
 function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModifier[] {
   const options: SeedModifier[] = [];
   let sortOrder = 0;
 
+  if (mode === "combo") {
+    options.push({
+      id: `${itemId}-rice-ham`,
+      name: bi("Ham Fried Rice", FRIED_RICE_SWAP_ZH.ham),
+      priceDelta: 0,
+      sortOrder: sortOrder++,
+      group: "rice",
+    });
+  }
+
   options.push({
     id: `${itemId}-rice-none`,
-    name: "No Rice",
+    name: MENU_COPY.noRice,
     priceDelta: 0,
     sortOrder: sortOrder++,
     group: "rice",
@@ -144,14 +185,14 @@ function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModif
     options.push(
       {
         id: `${itemId}-rice-steam`,
-        name: "Steam Rice",
+        name: MENU_COPY.steamRice,
         priceDelta: 0,
         sortOrder: sortOrder++,
         group: "rice",
       },
       {
         id: `${itemId}-rice-fried`,
-        name: "Fried Rice",
+        name: MENU_COPY.friedRice,
         priceDelta: 0,
         sortOrder: sortOrder++,
         group: "rice",
@@ -164,7 +205,7 @@ function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModif
 
     options.push({
       id: `${itemId}-rice-${swap.key}`,
-      name: swap.name,
+      name: bi(swap.name, FRIED_RICE_SWAP_ZH[swap.key]),
       priceDelta: swap.price,
       sortOrder: sortOrder++,
       group: "rice",
@@ -174,23 +215,32 @@ function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModif
   return options;
 }
 
-function buildOptions(itemId: string, mode: CustomizationMode): SeedModifier[] | undefined {
-  if (!mode) return undefined;
+function buildOptions(
+  itemId: string,
+  mode: CustomizationMode,
+  wingsStyle = false,
+): SeedModifier[] | undefined {
+  if (!mode) {
+    return wingsStyle ? wingsStyleOptions(itemId, 0) : undefined;
+  }
 
   if (mode === "ingredients") {
-    return ingredientOptions(itemId, 0);
+    const options = ingredientOptions(itemId, 0);
+    if (!wingsStyle) return options;
+    return [...options, ...wingsStyleOptions(itemId, options.length)];
   }
 
   const riceOptions = riceSideOptions(itemId, mode);
-  const ingredientStart = riceOptions.length;
-  return [...riceOptions, ...ingredientOptions(itemId, ingredientStart)];
-}
+  let sortOrder = riceOptions.length;
+  const options = [...riceOptions];
 
-function smallLargeSizes(itemId: string, small: number, large: number): SeedModifier[] {
-  return [
-    { id: `${itemId}-small`, name: "Small", priceDelta: small, sortOrder: 0 },
-    { id: `${itemId}-large`, name: "Large", priceDelta: large, sortOrder: 1 },
-  ];
+  if (wingsStyle) {
+    options.push(...wingsStyleOptions(itemId, sortOrder));
+    sortOrder += 2;
+  }
+
+  options.push(...ingredientOptions(itemId, sortOrder));
+  return options;
 }
 
 function fixedItem(
@@ -201,6 +251,7 @@ function fixedItem(
   price: number,
   sortOrder: number,
   customization: CustomizationMode = false,
+  wingsStyle = false,
 ): SeedItem {
   return {
     id,
@@ -209,8 +260,25 @@ function fixedItem(
     description,
     price,
     sortOrder,
-    options: buildOptions(id, customization),
+    options: buildOptions(id, customization, wingsStyle),
   };
+}
+
+function smallLargeSizes(itemId: string, small: number, large: number): SeedModifier[] {
+  return [
+    {
+      id: `${itemId}-small`,
+      name: MENU_COPY.small,
+      priceDelta: small,
+      sortOrder: 0,
+    },
+    {
+      id: `${itemId}-large`,
+      name: MENU_COPY.large,
+      priceDelta: large,
+      sortOrder: 1,
+    },
+  ];
 }
 
 function sizedItem(
@@ -235,21 +303,24 @@ function sizedItem(
   };
 }
 
-const WITH_RICE = "Served with steamed or fried rice.";
-const COMBO_INCLUDED = "Served with ham fried rice and egg roll.";
-const SPICY = "Hot & spicy.";
+const WITH_RICE = MENU_COPY.withRice;
+const COMBO_INCLUDED = MENU_COPY.comboIncluded;
+const SPICY = MENU_COPY.spicy;
 
 export const Menu: SeedCategory[] = [
   {
     id: "chefs-specialties",
-    name: "Chef's Specialties",
+    name: CATEGORY_NAMES.chefsSpecialties,
     sortOrder: 0,
     items: [
       fixedItem(
         "happy-family",
         "1",
-        "Happy Family",
-        `Shrimp, beef, chicken, pork, and vegetables stir fried in brown sauce. ${WITH_RICE}`,
+        bi("Happy Family", "合家欢"),
+        bi(
+          "Shrimp, beef, chicken, pork, and vegetables stir fried in brown sauce.",
+          "虾、牛、鸡、猪和蔬菜用褐色酱炒。",
+        ) + ` ${WITH_RICE}`,
         15,
         0,
         "with-rice",
@@ -257,8 +328,11 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "triple-delight",
         "3",
-        "Triple Delight",
-        `Shrimp, beef, and chicken stir fried in brown sauce. ${WITH_RICE}`,
+        bi("Triple Delight", "三宝"),
+        bi(
+          "Shrimp, beef, and chicken stir fried in brown sauce.",
+          "虾、牛和鸡用褐色酱炒。",
+        ) + ` ${WITH_RICE}`,
         15,
         1,
         "with-rice",
@@ -266,7 +340,7 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "orange-chicken",
         "4",
-        "Orange Chicken",
+        bi("Orange Chicken", "陈皮鸡"),
         `${SPICY} ${WITH_RICE}`,
         13,
         2,
@@ -275,8 +349,11 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "chow-mein",
         "5",
-        "Chow Mein",
-        `Chicken, pork, beef, shrimp, and vegetables with crispy noodles. ${WITH_RICE}`,
+        bi("Chow Mein", "炒面"),
+        bi(
+          "Chicken, pork, beef, shrimp, and vegetables with crispy noodles.",
+          "鸡、猪、牛、虾和蔬菜配脆面。",
+        ) + ` ${WITH_RICE}`,
         11,
         3,
         "with-rice",
@@ -284,8 +361,11 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "chop-suey",
         "6",
-        "Chop Suey",
-        `Chicken, pork, beef, shrimp, and vegetables. ${WITH_RICE}`,
+        bi("Chop Suey", "杂碎"),
+        bi(
+          "Chicken, pork, beef, shrimp, and vegetables.",
+          "鸡、猪、牛、虾和蔬菜。",
+        ) + ` ${WITH_RICE}`,
         11,
         4,
         "with-rice",
@@ -293,17 +373,47 @@ export const Menu: SeedCategory[] = [
       {
         id: "egg-foo-young",
         itemNumber: "7",
-        name: "Egg Foo Young",
-        description: "Choose style — shown on kitchen ticket.",
+        name: bi("Egg Foo Young", "芙蓉蛋"),
+        description: MENU_COPY.efyDescription,
         price: 0,
         sortOrder: 5,
         sizes: [
-          { id: "egg-foo-young-chicken", name: "Chicken EFY", priceDelta: 11, sortOrder: 0 },
-          { id: "egg-foo-young-pork", name: "Pork EFY", priceDelta: 11, sortOrder: 1 },
-          { id: "egg-foo-young-vegetable", name: "Vegetable EFY", priceDelta: 11, sortOrder: 2 },
-          { id: "egg-foo-young-beef", name: "Beef EFY", priceDelta: 12, sortOrder: 3 },
-          { id: "egg-foo-young-shrimp", name: "Shrimp EFY", priceDelta: 12, sortOrder: 4 },
-          { id: "egg-foo-young-house", name: "House EFY", priceDelta: 12, sortOrder: 5 },
+          {
+            id: "egg-foo-young-chicken",
+            name: bi("Chicken EFY", EFY_STYLE_ZH.chicken),
+            priceDelta: 11,
+            sortOrder: 0,
+          },
+          {
+            id: "egg-foo-young-pork",
+            name: bi("Pork EFY", EFY_STYLE_ZH.pork),
+            priceDelta: 11,
+            sortOrder: 1,
+          },
+          {
+            id: "egg-foo-young-vegetable",
+            name: bi("Vegetable EFY", EFY_STYLE_ZH.vegetable),
+            priceDelta: 11,
+            sortOrder: 2,
+          },
+          {
+            id: "egg-foo-young-beef",
+            name: bi("Beef EFY", EFY_STYLE_ZH.beef),
+            priceDelta: 12,
+            sortOrder: 3,
+          },
+          {
+            id: "egg-foo-young-shrimp",
+            name: bi("Shrimp EFY", EFY_STYLE_ZH.shrimp),
+            priceDelta: 12,
+            sortOrder: 4,
+          },
+          {
+            id: "egg-foo-young-house",
+            name: bi("House EFY", EFY_STYLE_ZH.house),
+            priceDelta: 12,
+            sortOrder: 5,
+          },
         ],
         options: buildOptions("egg-foo-young", "ingredients"),
       },
@@ -311,29 +421,86 @@ export const Menu: SeedCategory[] = [
   },
   {
     id: "special-combo",
-    name: "Special Combo",
+    name: CATEGORY_NAMES.specialCombo,
     sortOrder: 1,
     items: [
-      fixedItem("combo-chicken-on-stick", "C1", "Chicken on Stick", COMBO_INCLUDED, 11, 0, "combo"),
-      fixedItem("combo-chicken-wings", "C2", "Chicken Wings", COMBO_INCLUDED, 11, 1, "combo"),
+      fixedItem(
+        "combo-chicken-on-stick",
+        "C1",
+        bi("Chicken on Stick", "串鸡"),
+        COMBO_INCLUDED,
+        11,
+        0,
+        "combo",
+      ),
+      fixedItem(
+        "combo-chicken-wings",
+        "C2",
+        bi("Chicken Wings", "鸡翅"),
+        COMBO_INCLUDED,
+        11,
+        1,
+        "combo",
+        true,
+      ),
       fixedItem(
         "combo-general-tsos",
         "C3",
-        "General Tso's Chicken",
+        bi("General Tso's Chicken", "左宗鸡"),
         `${SPICY} ${COMBO_INCLUDED}`,
         11,
         2,
         "combo",
       ),
-      fixedItem("combo-sweet-sour-chicken", "C4", "Sweet & Sour Chicken", COMBO_INCLUDED, 11, 3, "combo"),
-      fixedItem("combo-chicken-broccoli", "C5", "Chicken w/ Broccoli", COMBO_INCLUDED, 11, 4, "combo"),
-      fixedItem("combo-sesame-chicken", "C6", "Sesame Chicken", COMBO_INCLUDED, 11, 5, "combo"),
-      fixedItem("combo-beef-broccoli", "C9", "Beef w/ Broccoli", COMBO_INCLUDED, 11, 6, "combo"),
-      fixedItem("combo-pepper-steak", "C10", "Pepper Steak", COMBO_INCLUDED, 11, 7, "combo"),
+      fixedItem(
+        "combo-sweet-sour-chicken",
+        "C4",
+        bi("Sweet & Sour Chicken", "甜酸鸡"),
+        COMBO_INCLUDED,
+        11,
+        3,
+        "combo",
+      ),
+      fixedItem(
+        "combo-chicken-broccoli",
+        "C5",
+        bi("Chicken w/ Broccoli", "鸡西兰花"),
+        COMBO_INCLUDED,
+        11,
+        4,
+        "combo",
+      ),
+      fixedItem(
+        "combo-sesame-chicken",
+        "C6",
+        bi("Sesame Chicken", "芝麻鸡"),
+        COMBO_INCLUDED,
+        11,
+        5,
+        "combo",
+      ),
+      fixedItem(
+        "combo-beef-broccoli",
+        "C9",
+        bi("Beef w/ Broccoli", "牛西兰花"),
+        COMBO_INCLUDED,
+        11,
+        6,
+        "combo",
+      ),
+      fixedItem(
+        "combo-pepper-steak",
+        "C10",
+        bi("Pepper Steak", "胡椒牛"),
+        COMBO_INCLUDED,
+        11,
+        7,
+        "combo",
+      ),
       fixedItem(
         "combo-mongolian-pork",
         "C11",
-        "Mongolian Pork",
+        bi("Mongolian Pork", "蒙古猪"),
         `${SPICY} ${COMBO_INCLUDED}`,
         11,
         8,
@@ -342,7 +509,7 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "combo-mongolian-beef",
         "C12",
-        "Mongolian Beef",
+        bi("Mongolian Beef", "蒙古牛"),
         `${SPICY} ${COMBO_INCLUDED}`,
         11,
         9,
@@ -351,7 +518,7 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "combo-chicken-mixed-veg",
         "C13",
-        "Chicken w/ Mixed Vegetables",
+        bi("Chicken w/ Mixed Vegetables", "鸡杂菜"),
         COMBO_INCLUDED,
         11,
         10,
@@ -360,59 +527,118 @@ export const Menu: SeedCategory[] = [
       fixedItem(
         "combo-beef-mixed-veg",
         "C14",
-        "Beef w/ Mixed Vegetables",
+        bi("Beef w/ Mixed Vegetables", "牛杂菜"),
         COMBO_INCLUDED,
         11,
         11,
         "combo",
       ),
-      fixedItem("combo-shrimp-broccoli", "C15", "Shrimp w/ Broccoli", COMBO_INCLUDED, 11, 12, "combo"),
-      fixedItem("combo-buddhist-delight", "C16", "Buddhist Delight", COMBO_INCLUDED, 11, 13, "combo"),
+      fixedItem(
+        "combo-shrimp-broccoli",
+        "C15",
+        bi("Shrimp w/ Broccoli", "虾西兰花"),
+        COMBO_INCLUDED,
+        11,
+        12,
+        "combo",
+      ),
+      fixedItem(
+        "combo-buddhist-delight",
+        "C16",
+        bi("Buddhist Delight", "罗汉斋"),
+        COMBO_INCLUDED,
+        11,
+        13,
+        "combo",
+      ),
     ],
   },
   {
     id: "appetizers-sides",
-    name: "Appetizers & Sides",
+    name: CATEGORY_NAMES.appetizersSides,
     sortOrder: 2,
     items: [
-      fixedItem("egg-roll", "A1", "Egg Roll", "", 2, 0),
-      fixedItem("cheese-wonton", "A2", "Cheese Wonton (6)", "", 5.5, 1),
-      fixedItem("fried-shrimp", "A3", "Fried Shrimp (10)", "", 10, 2),
-      fixedItem("app-chicken-on-stick", "A4", "Chicken on Stick (5)", "", 7, 3),
-      fixedItem("app-chicken-wings", "A5", "Chicken Wings (6)", "", 7.5, 4),
-      fixedItem("sweet-donuts", "A6", "Sweet Donuts (10)", "", 5, 5),
-      fixedItem("steam-dumplings", "A7", "Steam Dumplings (10)", "", 9, 6),
-      fixedItem("fried-dumplings", "A8", "Fried Dumplings (10)", "", 9, 7),
-      fixedItem("steam-rice", null, "Steam Rice", "", 3, 8),
-      fixedItem("soy-duck-packet", null, "Soy & Duck Packet", "", 0.1, 9),
-      fixedItem("hot-sauce-side", null, "Hot Sauce", "", 1, 10),
-      fixedItem("fried-rice-side", null, "Fried Rice", "", 3.5, 11),
-      fixedItem("crispy-noodles", null, "Crispy Noodles", "", 1.5, 12),
-      sizedItem("yum-yum-sauce", null, "Yum Yum Sauce", "", 1, 2, 13),
-      sizedItem("red-sweet-sour-sauce", null, "Red Sweet & Sour Sauce", "", 1, 2, 14),
-      sizedItem("brown-sweet-sour-sauce", null, "Brown Sweet & Sour Sauce", "", 1, 2, 15),
+      fixedItem("egg-roll", "A1", bi("Egg Roll", "春卷"), "", 2, 0),
+      fixedItem("cheese-wonton", "A2", bi("Cheese Wonton (6)", "芝士云吞（6只）"), "", 5.5, 1),
+      fixedItem("fried-shrimp", "A3", bi("Fried Shrimp (10)", "炸虾（10只）"), "", 10, 2),
+      fixedItem("app-chicken-on-stick", "A4", bi("Chicken on Stick (5)", "串鸡（5串）"), "", 7, 3),
+      fixedItem(
+        "app-chicken-wings",
+        "A5",
+        bi("Chicken Wings (6)", "鸡翅（6只）"),
+        "",
+        7.5,
+        4,
+        false,
+        true,
+      ),
+      fixedItem("sweet-donuts", "A6", bi("Sweet Donuts (10)", "甜圈（10个）"), "", 5, 5),
+      fixedItem("steam-dumplings", "A7", bi("Steam Dumplings (10)", "水饺（10只）"), "", 9, 6),
+      fixedItem("fried-dumplings", "A8", bi("Fried Dumplings (10)", "锅贴（10只）"), "", 9, 7),
+      fixedItem("steam-rice", null, bi("Steam Rice", "白饭"), "", 3, 8),
+      fixedItem("soy-duck-packet", null, bi("Soy & Duck Packet", "酱油鸭酱包"), "", 0.1, 9),
+      fixedItem("hot-sauce-side", null, bi("Hot Sauce", "辣酱"), "", 1, 10),
+      fixedItem("fried-rice-side", null, bi("Fried Rice", "炒饭"), "", 3.5, 11),
+      fixedItem("crispy-noodles", null, bi("Crispy Noodles", "脆面"), "", 1.5, 12),
+      sizedItem("yum-yum-sauce", null, bi("Yum Yum Sauce", "Yum Yum酱"), "", 1, 2, 13),
+      sizedItem(
+        "red-sweet-sour-sauce",
+        null,
+        bi("Red Sweet & Sour Sauce", "红酸甜酱"),
+        "",
+        1,
+        2,
+        14,
+      ),
+      sizedItem(
+        "brown-sweet-sour-sauce",
+        null,
+        bi("Brown Sweet & Sour Sauce", "褐酸甜酱"),
+        "",
+        1,
+        2,
+        15,
+      ),
     ],
   },
   {
     id: "soups",
-    name: "Soups",
+    name: CATEGORY_NAMES.soups,
     sortOrder: 3,
     items: [
-      sizedItem("egg-drop-soup", "S7", "Egg Drop Soup", "", 4, 7, 0, "ingredients"),
-      sizedItem("spicy-sour-soup", "S8", "Spicy Sour Soup", SPICY, 4, 7, 1, "ingredients"),
-      sizedItem("vegetable-soup", "s9", "Vegetable Soup", "", 4, 7, 2, "ingredients"),
+      sizedItem("egg-drop-soup", "S7", bi("Egg Drop Soup", "蛋花汤"), "", 4, 7, 0, "ingredients"),
+      sizedItem(
+        "spicy-sour-soup",
+        "S8",
+        bi("Spicy Sour Soup", "酸辣汤"),
+        SPICY,
+        4,
+        7,
+        1,
+        "ingredients",
+      ),
+      sizedItem(
+        "vegetable-soup",
+        "s9",
+        bi("Vegetable Soup", "菜汤"),
+        "",
+        4,
+        7,
+        2,
+        "ingredients",
+      ),
     ],
   },
   {
     id: "fried-rice",
-    name: "Fried Rice",
+    name: CATEGORY_NAMES.friedRice,
     sortOrder: 4,
     items: [
       sizedItem(
         "veg-fried-rice",
         "11",
-        "Vegetable Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Vegetable Fried Rice", "菜炒饭"),
+        MENU_COPY.friedRiceBase,
         6,
         9,
         0,
@@ -421,8 +647,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "pork-fried-rice",
         "12",
-        "Pork Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Pork Fried Rice", "猪炒饭"),
+        MENU_COPY.friedRiceBase,
         7.5,
         10,
         1,
@@ -431,8 +657,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "chicken-fried-rice",
         "13",
-        "Chicken Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Chicken Fried Rice", "鸡炒饭"),
+        MENU_COPY.friedRiceBase,
         7.5,
         10,
         2,
@@ -441,8 +667,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "ham-fried-rice",
         "14",
-        "Ham Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Ham Fried Rice", "火腿炒饭"),
+        MENU_COPY.friedRiceBase,
         7.5,
         10,
         3,
@@ -451,8 +677,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "beef-fried-rice",
         "15",
-        "Beef Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Beef Fried Rice", "牛炒饭"),
+        MENU_COPY.friedRiceBase,
         8,
         11,
         4,
@@ -461,8 +687,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "shrimp-fried-rice",
         "16",
-        "Shrimp Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("Shrimp Fried Rice", "虾炒饭"),
+        MENU_COPY.friedRiceBase,
         7.5,
         10,
         5,
@@ -471,8 +697,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "house-fried-rice",
         "17",
-        "House Fried Rice",
-        "Cooked with pea, carrot, onion, and egg.",
+        bi("House Fried Rice", "本楼炒饭"),
+        MENU_COPY.friedRiceBase,
         8,
         11,
         6,
@@ -482,14 +708,14 @@ export const Menu: SeedCategory[] = [
   },
   {
     id: "lo-mein",
-    name: "Lo Mein",
+    name: CATEGORY_NAMES.loMein,
     sortOrder: 5,
     items: [
       sizedItem(
         "veg-lo-mein",
         "21",
-        "Vegetable Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Vegetable Lo Mein", "菜捞面"),
+        MENU_COPY.loMeinBase,
         7.5,
         10,
         0,
@@ -498,8 +724,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "pork-lo-mein",
         "22",
-        "Pork Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Pork Lo Mein", "猪捞面"),
+        MENU_COPY.loMeinBase,
         7.5,
         10,
         1,
@@ -508,8 +734,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "chicken-lo-mein",
         "23",
-        "Chicken Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Chicken Lo Mein", "鸡捞面"),
+        MENU_COPY.loMeinBase,
         7.5,
         10,
         2,
@@ -518,8 +744,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "ham-lo-mein",
         "24",
-        "Ham Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Ham Lo Mein", "火腿捞面"),
+        MENU_COPY.loMeinBase,
         7.5,
         10,
         3,
@@ -528,8 +754,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "beef-lo-mein",
         "25",
-        "Beef Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Beef Lo Mein", "牛捞面"),
+        MENU_COPY.loMeinBase,
         8,
         11,
         4,
@@ -538,8 +764,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "shrimp-lo-mein",
         "26",
-        "Shrimp Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("Shrimp Lo Mein", "虾捞面"),
+        MENU_COPY.loMeinBase,
         7.5,
         10,
         5,
@@ -548,8 +774,8 @@ export const Menu: SeedCategory[] = [
       sizedItem(
         "house-lo-mein",
         "27",
-        "House Lo Mein",
-        "Spaghetti-like noodles with carrot, celery, onion, and napa.",
+        bi("House Lo Mein", "本楼捞面"),
+        MENU_COPY.loMeinBase,
         8,
         11,
         6,
@@ -559,73 +785,305 @@ export const Menu: SeedCategory[] = [
   },
   {
     id: "vegetable",
-    name: "Vegetable",
+    name: CATEGORY_NAMES.vegetable,
     sortOrder: 6,
     items: [
-      fixedItem("buddhist-delight", "31", "Buddhist Delight", WITH_RICE, 10, 0, "with-rice"),
-      fixedItem("mixed-vegetable", "32", "Mixed Vegetable", WITH_RICE, 10, 1, "with-rice"),
+      fixedItem(
+        "buddhist-delight",
+        "31",
+        bi("Buddhist Delight", "罗汉斋"),
+        WITH_RICE,
+        10,
+        0,
+        "with-rice",
+      ),
+      fixedItem(
+        "mixed-vegetable",
+        "32",
+        bi("Mixed Vegetable", "杂菜"),
+        WITH_RICE,
+        10,
+        1,
+        "with-rice",
+      ),
     ],
   },
   {
     id: "chicken",
-    name: "Chicken",
+    name: CATEGORY_NAMES.chicken,
     sortOrder: 7,
     items: [
-      sizedItem("moo-goo-gai-pan", "40", "Moo Goo Gai Pan", WITH_RICE, 8, 11, 0, "with-rice"),
-      sizedItem("general-tsos-chicken", "41", "General Tso's Chicken", `${SPICY} ${WITH_RICE}`, 8, 12, 1, "with-rice"),
-      sizedItem("chicken-broccoli", "42", "Chicken w/ Broccoli", WITH_RICE, 8, 11, 2, "with-rice"),
-      sizedItem("chicken-vegetable", "43", "Chicken w/ Vegetable", WITH_RICE, 8, 11, 3, "with-rice"),
-      sizedItem("black-pepper-chicken", "44", "Black Pepper Chicken", `${SPICY} ${WITH_RICE}`, 8, 11, 4, "with-rice"),
-      sizedItem("sweet-sour-chicken", "45", "Sweet & Sour Chicken", WITH_RICE, 8, 12, 5, "with-rice"),
-      sizedItem("sesame-chicken", "46", "Sesame Chicken", WITH_RICE, 8, 12, 6, "with-rice"),
-      sizedItem("kung-pao-chicken", "47", "Kung Pao Chicken", `${SPICY} ${WITH_RICE}`, 8, 11, 7, "with-rice"),
+      sizedItem(
+        "moo-goo-gai-pan",
+        "40",
+        bi("Moo Goo Gai Pan", "蘑菇鸡片"),
+        WITH_RICE,
+        8,
+        11,
+        0,
+        "with-rice",
+      ),
+      sizedItem(
+        "general-tsos-chicken",
+        "41",
+        bi("General Tso's Chicken", "左宗鸡"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        12,
+        1,
+        "with-rice",
+      ),
+      sizedItem(
+        "chicken-broccoli",
+        "42",
+        bi("Chicken w/ Broccoli", "鸡西兰花"),
+        WITH_RICE,
+        8,
+        11,
+        2,
+        "with-rice",
+      ),
+      sizedItem(
+        "chicken-vegetable",
+        "43",
+        bi("Chicken w/ Vegetable", "鸡杂菜"),
+        WITH_RICE,
+        8,
+        11,
+        3,
+        "with-rice",
+      ),
+      sizedItem(
+        "black-pepper-chicken",
+        "44",
+        bi("Black Pepper Chicken", "黑椒鸡"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        11,
+        4,
+        "with-rice",
+      ),
+      sizedItem(
+        "sweet-sour-chicken",
+        "45",
+        bi("Sweet & Sour Chicken", "甜酸鸡"),
+        WITH_RICE,
+        8,
+        12,
+        5,
+        "with-rice",
+      ),
+      sizedItem(
+        "sesame-chicken",
+        "46",
+        bi("Sesame Chicken", "芝麻鸡"),
+        WITH_RICE,
+        8,
+        12,
+        6,
+        "with-rice",
+      ),
+      sizedItem(
+        "kung-pao-chicken",
+        "47",
+        bi("Kung Pao Chicken", "宫保鸡"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        11,
+        7,
+        "with-rice",
+      ),
     ],
   },
   {
     id: "pork",
-    name: "Pork",
+    name: CATEGORY_NAMES.pork,
     sortOrder: 8,
     items: [
-      sizedItem("pork-broccoli", "51", "Pork w/ Broccoli", WITH_RICE, 8, 11, 0, "with-rice"),
-      sizedItem("pork-vegetable", "52", "Pork w/ Vegetable", WITH_RICE, 8, 11, 1, "with-rice"),
-      sizedItem("mongolian-pork", "53", "Mongolian Pork", `${SPICY} ${WITH_RICE}`, 8, 11, 2, "with-rice"),
-      sizedItem("hunan-pork", "54", "Hunan Pork", `${SPICY} ${WITH_RICE}`, 8, 11, 3, "with-rice"),
-      sizedItem("yu-sheng-pork", "55", "Yu Sheng Pork", `${SPICY} ${WITH_RICE}`, 8, 11, 4, "with-rice"),
+      sizedItem(
+        "pork-broccoli",
+        "51",
+        bi("Pork w/ Broccoli", "猪西兰花"),
+        WITH_RICE,
+        8,
+        11,
+        0,
+        "with-rice",
+      ),
+      sizedItem(
+        "pork-vegetable",
+        "52",
+        bi("Pork w/ Vegetable", "猪杂菜"),
+        WITH_RICE,
+        8,
+        11,
+        1,
+        "with-rice",
+      ),
+      sizedItem(
+        "mongolian-pork",
+        "53",
+        bi("Mongolian Pork", "蒙古猪"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        11,
+        2,
+        "with-rice",
+      ),
+      sizedItem(
+        "hunan-pork",
+        "54",
+        bi("Hunan Pork", "湖南猪"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        11,
+        3,
+        "with-rice",
+      ),
+      sizedItem(
+        "yu-sheng-pork",
+        "55",
+        bi("Yu Sheng Pork", "鱼香猪"),
+        `${SPICY} ${WITH_RICE}`,
+        8,
+        11,
+        4,
+        "with-rice",
+      ),
     ],
   },
   {
     id: "beef",
-    name: "Beef",
+    name: CATEGORY_NAMES.beef,
     sortOrder: 9,
     items: [
-      sizedItem("pepper-steak", "61", "Pepper Steak", WITH_RICE, 9, 13, 0, "with-rice"),
-      sizedItem("beef-broccoli", "62", "Beef w/ Broccoli", WITH_RICE, 9, 13, 1, "with-rice"),
-      sizedItem("beef-vegetable", "63", "Beef w/ Vegetable", WITH_RICE, 9, 13, 2, "with-rice"),
-      sizedItem("mongolian-beef", "64", "Mongolian Beef", `${SPICY} ${WITH_RICE}`, 9, 13, 3, "with-rice"),
-      sizedItem("hunan-beef", "65", "Hunan Beef", `${SPICY} ${WITH_RICE}`, 9, 13, 4, "with-rice"),
-      sizedItem("kung-pao-beef", "66", "Kung Pao Beef", `${SPICY} ${WITH_RICE}`, 9, 13, 5, "with-rice"),
+      sizedItem(
+        "pepper-steak",
+        "61",
+        bi("Pepper Steak", "胡椒牛"),
+        WITH_RICE,
+        9,
+        13,
+        0,
+        "with-rice",
+      ),
+      sizedItem(
+        "beef-broccoli",
+        "62",
+        bi("Beef w/ Broccoli", "牛西兰花"),
+        WITH_RICE,
+        9,
+        13,
+        1,
+        "with-rice",
+      ),
+      sizedItem(
+        "beef-vegetable",
+        "63",
+        bi("Beef w/ Vegetable", "牛杂菜"),
+        WITH_RICE,
+        9,
+        13,
+        2,
+        "with-rice",
+      ),
+      sizedItem(
+        "mongolian-beef",
+        "64",
+        bi("Mongolian Beef", "蒙古牛"),
+        `${SPICY} ${WITH_RICE}`,
+        9,
+        13,
+        3,
+        "with-rice",
+      ),
+      sizedItem(
+        "hunan-beef",
+        "65",
+        bi("Hunan Beef", "湖南牛"),
+        `${SPICY} ${WITH_RICE}`,
+        9,
+        13,
+        4,
+        "with-rice",
+      ),
+      sizedItem(
+        "kung-pao-beef",
+        "66",
+        bi("Kung Pao Beef", "宫保牛"),
+        `${SPICY} ${WITH_RICE}`,
+        9,
+        13,
+        5,
+        "with-rice",
+      ),
     ],
   },
   {
     id: "shrimp",
-    name: "Shrimp",
+    name: CATEGORY_NAMES.shrimp,
     sortOrder: 10,
     items: [
-      sizedItem("shrimp-lobster-sauce", "71", "Shrimp in Lobster Sauce", WITH_RICE, 9, 12, 0, "with-rice"),
-      sizedItem("shrimp-broccoli", "72", "Shrimp w/ Broccoli", WITH_RICE, 9, 12, 1, "with-rice"),
-      sizedItem("shrimp-vegetable", "73", "Shrimp w/ Vegetable", WITH_RICE, 9, 12, 2, "with-rice"),
-      sizedItem("yu-sheng-shrimp", "74", "Yu Sheng Shrimp", `${SPICY} ${WITH_RICE}`, 9, 12, 3, "with-rice"),
-      sizedItem("sweet-sour-shrimp", "75", "Sweet & Sour Shrimp", WITH_RICE, 9, 12, 4, "with-rice"),
+      sizedItem(
+        "shrimp-lobster-sauce",
+        "71",
+        bi("Shrimp in Lobster Sauce", "虾龙须酱"),
+        WITH_RICE,
+        9,
+        12,
+        0,
+        "with-rice",
+      ),
+      sizedItem(
+        "shrimp-broccoli",
+        "72",
+        bi("Shrimp w/ Broccoli", "虾西兰花"),
+        WITH_RICE,
+        9,
+        12,
+        1,
+        "with-rice",
+      ),
+      sizedItem(
+        "shrimp-vegetable",
+        "73",
+        bi("Shrimp w/ Vegetable", "虾杂菜"),
+        WITH_RICE,
+        9,
+        12,
+        2,
+        "with-rice",
+      ),
+      sizedItem(
+        "yu-sheng-shrimp",
+        "74",
+        bi("Yu Sheng Shrimp", "鱼香虾"),
+        `${SPICY} ${WITH_RICE}`,
+        9,
+        12,
+        3,
+        "with-rice",
+      ),
+      sizedItem(
+        "sweet-sour-shrimp",
+        "75",
+        bi("Sweet & Sour Shrimp", "甜酸虾"),
+        WITH_RICE,
+        9,
+        12,
+        4,
+        "with-rice",
+      ),
     ],
   },
   {
     id: "drinks",
-    name: "Drinks",
+    name: CATEGORY_NAMES.drinks,
     sortOrder: 11,
     items: [
-      fixedItem("water", null, "Water", "", 1, 0),
-      fixedItem("soda", null, "Soda", "", 2, 1),
-      fixedItem("sweet-tea", null, "Sweet Tea", "", 2.5, 2),
-    ]
-  }
+      fixedItem("water", null, bi("Water", "水"), "", 1, 0),
+      fixedItem("soda", null, bi("Soda", "汽水"), "", 2, 1),
+      fixedItem("sweet-tea", null, bi("Sweet Tea", "甜茶"), "", 2.5, 2),
+    ],
+  },
 ];

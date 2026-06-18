@@ -34,8 +34,10 @@ function defaultOptionIds(itemId: string, options: MenuItemOption[]): string[] {
   const riceOptions = options.filter((option) => option.optionGroup === "rice");
   if (riceOptions.length === 0) return [];
 
-  const steam = riceOptions.find((option) => option.id === `${itemId}-rice-steam`);
-  if (steam) return [steam.id];
+  if (itemId.startsWith("combo-")) {
+    const ham = riceOptions.find((option) => option.id === `${itemId}-rice-ham`);
+    if (ham) return [ham.id];
+  }
 
   const none = riceOptions.find((option) => option.id === `${itemId}-rice-none`);
   return none ? [none.id] : [];
@@ -43,6 +45,7 @@ function defaultOptionIds(itemId: string, options: MenuItemOption[]): string[] {
 
 function groupLabel(group: string, t: (key: string) => string): string {
   if (group === "rice") return t("placeOrder.selectRice");
+  if (group === "wings") return t("placeOrder.selectWings");
   return t("placeOrder.selectOptions");
 }
 
@@ -90,8 +93,10 @@ export function AddToCartModal({
     }
 
     const orderedGroups = [...grouped.entries()].sort(([a], [b]) => {
-      if (a === "rice") return -1;
-      if (b === "rice") return 1;
+      const order: Record<string, number> = { rice: 0, wings: 1 };
+      const rankA = order[a] ?? 99;
+      const rankB = order[b] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
       return a.localeCompare(b);
     });
 
