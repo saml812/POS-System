@@ -11,22 +11,31 @@ const ESC = "\x1b";
 const GS = "\x1d";
 const INIT = ESC + "@";
 const CUT = GS + "V\x00";
-const LF = "\n";
+const LF = "\r\n";
 const PRINTER_TIMEOUT_MS = 5000;
 const RECEIPT_WIDTH = 32;
+
+function sanitizeForPrinter(text) {
+  return String(text ?? "")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^\x20-\x7E]/g, "");
+}
 
 function money(amount) {
   return `$${Number(amount).toFixed(2)}`;
 }
 
 function upper(text) {
-  return String(text ?? "").toUpperCase();
+  return sanitizeForPrinter(text).toUpperCase();
 }
 
 function truncate(text, max) {
-  const value = String(text ?? "");
+  const value = sanitizeForPrinter(text);
   if (value.length <= max) return value;
-  return `${value.slice(0, max - 1)}…`;
+  return `${value.slice(0, max - 3)}...`;
 }
 
 function line(text = "") {
@@ -70,16 +79,16 @@ function padLine(left, right, width = RECEIPT_WIDTH) {
 
 function formatDateTime(value) {
   const date = value ? new Date(value) : new Date();
-  return upper(
-    date.toLocaleString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }),
-  );
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  let hours = date.getHours();
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  hours %= 12;
+  if (hours === 0) hours = 12;
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+
+  return `${month}/${day}/${year}, ${hours}:${minutes} ${meridiem}`;
 }
 
 function orderTypeLabel(order) {
@@ -90,7 +99,29 @@ function itemCodePrefix(item) {
   return item.itemCode ? `${item.itemCode} ` : "";
 }
 
-function buildItemLines(item) {
+function optionName(option) {
+  if (typeof option === "string") return sanitizeForPrinter(option);
+  return sanitizeForPrinter(option?.name ?? "");
+}
+
+function normalizeItem(item) {
+  return {
+    quantity: Number(item.quantity ?? 1),
+    itemCode: item.itemCode ?? null,
+    name: sanitizeForPrinter(item.name),
+    sizeName: item.sizeName ? sanitizeForPrinter(item.sizeName) : null,
+    price: Number(item.price),
+    preferences: item.preferences
+      ? sanitizeForPrinter(item.preferences)
+      : null,
+    options: (item.options ?? [])
+      .map((option) => ({ name: optionName(option) }))
+      .filter((option) => option.name),
+  };
+}
+
+function buildItemLines(rawItem) {
+  const item = normalizeItem(rawItem);
   const lines = [];
   const header = `${item.quantity}X ${itemCodePrefix(item)}${item.name}`;
   lines.push(truncate(upper(header), RECEIPT_WIDTH));
@@ -99,17 +130,16 @@ function buildItemLines(item) {
     lines.push(truncate(upper(`  ${item.sizeName}`), RECEIPT_WIDTH));
   }
 
-  const itemOptions = item.options ?? [];
-  if (itemOptions.length > 0) {
-    const optionNames = itemOptions.map((option) => option.name).join(", ");
+  if (item.options.length > 0) {
+    const optionNames = item.options.map((option) => option.name).join(", ");
     lines.push(truncate(upper(`  ${optionNames}`), RECEIPT_WIDTH));
   }
 
-  if (item.preferences?.trim()) {
-    lines.push(truncate(upper(`  ${item.preferences.trim()}`), RECEIPT_WIDTH));
+  if (item.preferences) {
+    lines.push(truncate(upper(`  ${item.preferences}`), RECEIPT_WIDTH));
   }
 
-  const lineTotal = money(Number(item.price) * item.quantity);
+  const lineTotal = money(item.price * item.quantity);
   lines.push(alignRight(lineTotal));
   return lines;
 }
@@ -283,7 +313,8 @@ export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
 
 function buildReceiptBuffer(order, config) {
   const lines = buildOrderReceiptLines(order, config);
-  return Buffer.from(`${INIT}${lines.map(line).join("")}${CUT}`, "ascii");
+  const body = `${INIT}${lines.map(line).join("")}${LF}${CUT}`;
+  return Buffer.from(body, "ascii");
 }
 
 function buildTestReceiptBuffer(config) {
@@ -316,7 +347,8 @@ function buildTestReceiptBuffer(config) {
   };
 
   const lines = buildOrderReceiptLines(sampleOrder, config);
-  return Buffer.from(`${INIT}${lines.map(line).join("")}${CUT}`, "ascii");
+  const body = `${INIT}${lines.map(line).join("")}${LF}${CUT}`;
+  return Buffer.from(body, "ascii");
 }
 
 async function printOrderReceipt(order) {
