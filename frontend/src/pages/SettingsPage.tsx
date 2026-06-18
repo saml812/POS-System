@@ -304,13 +304,17 @@ export function SettingsPage() {
                 </label>
                 <label className="em-field em-field-full">
                   <span className="em-field-label">{t("settings.storeAddress")}</span>
-                  <input
+                  <textarea
                     className="em-input"
+                    rows={3}
                     value={storeAddress}
                     onChange={(e) => setStoreAddress(e.target.value)}
                     placeholder={t("settings.storeAddressPlaceholder")}
                     disabled={receiptBusy}
                   />
+                  <span className="settings-hint muted">
+                    {t("settings.storeAddressHint")}
+                  </span>
                 </label>
               </div>
 

@@ -44,6 +44,22 @@ function center(text, width = RECEIPT_WIDTH) {
   return " ".repeat(pad) + value;
 }
 
+function centerAddressLines(address) {
+  if (!address?.trim()) return [];
+
+  return address
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => center(part));
+}
+
+function alignRight(text, width = RECEIPT_WIDTH) {
+  const value = upper(text);
+  if (value.length >= width) return value.slice(0, width);
+  return " ".repeat(width - value.length) + value;
+}
+
 function padLine(left, right, width = RECEIPT_WIDTH) {
   const leftText = upper(left);
   const rightText = upper(right);
@@ -70,32 +86,11 @@ function orderTypeLabel(order) {
   return order.payAtPickup ? "CALL-IN" : "WALK-IN";
 }
 
-function isEditedItem(item) {
-  return Boolean(
-    item.sizeName ||
-      (item.options?.length ?? 0) > 0 ||
-      item.preferences?.trim(),
-  );
-}
-
 function itemCodePrefix(item) {
   return item.itemCode ? `${item.itemCode} ` : "";
 }
 
-function buildPlainItemLine(item) {
-  const qtyLabel = `${item.quantity}X`;
-  const suffix = ` - ${money(Number(item.price) * item.quantity)}`;
-  const prefix = `${qtyLabel} ${itemCodePrefix(item)}`;
-  const maxNameLen = RECEIPT_WIDTH - prefix.length - suffix.length;
-
-  if (maxNameLen < 1) {
-    return truncate(upper(`${prefix}${suffix}`), RECEIPT_WIDTH);
-  }
-
-  return upper(`${prefix}${truncate(item.name, maxNameLen)}${suffix}`);
-}
-
-function buildEditedItemLines(item) {
+function buildItemLines(item) {
   const lines = [];
   const header = `${item.quantity}X ${itemCodePrefix(item)}${item.name}`;
   lines.push(truncate(upper(header), RECEIPT_WIDTH));
@@ -115,7 +110,7 @@ function buildEditedItemLines(item) {
   }
 
   const lineTotal = money(Number(item.price) * item.quantity);
-  lines.push(padLine("", lineTotal));
+  lines.push(alignRight(lineTotal));
   return lines;
 }
 
@@ -256,9 +251,7 @@ export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
 
   lines.push(blank());
   lines.push(center(storeName));
-  if (storeAddress) {
-    lines.push(center(storeAddress));
-  }
+  lines.push(...centerAddressLines(storeAddress));
   lines.push(blank());
   lines.push(center(formatDateTime(order.createdAt)));
   lines.push(center(orderTypeLabel(order)));
@@ -267,11 +260,7 @@ export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
   lines.push(upper("-".repeat(RECEIPT_WIDTH)));
 
   for (const item of order.items ?? []) {
-    if (isEditedItem(item)) {
-      lines.push(...buildEditedItemLines(item));
-    } else {
-      lines.push(buildPlainItemLine(item));
-    }
+    lines.push(...buildItemLines(item));
     lines.push(blank());
   }
 
