@@ -16,13 +16,23 @@ function toCategory(category) {
 }
 
 function toMenuItemModifier(modifier) {
-  const { id, menuItemId, name, priceDelta, sortOrder, isAvailable, createdAt, updatedAt } =
-    modifier;
+  const {
+    id,
+    menuItemId,
+    name,
+    priceDelta,
+    optionGroup,
+    sortOrder,
+    isAvailable,
+    createdAt,
+    updatedAt,
+  } = modifier;
   return {
     id,
     menuItemId,
     name,
     priceDelta: Number(priceDelta),
+    optionGroup: optionGroup ?? null,
     sortOrder,
     isAvailable,
     createdAt,

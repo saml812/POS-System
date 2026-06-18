@@ -1340,20 +1340,28 @@ textarea:focus {
 }
 
 .dd-item-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.75rem;
+  align-items: stretch;
   background: transparent;
   border: none;
   box-shadow: none;
 }
 
-.dd-item-card {
-  display: grid;
-  grid-template-columns: 88px 1fr auto;
-  gap: 0.85rem;
-  align-items: center;
-  padding: 1rem;
+.dd-item-card-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  gap: 0;
+  cursor: pointer;
+  overflow: hidden;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1361,9 +1369,89 @@ textarea:focus {
   transition: background 0.12s, box-shadow 0.12s;
 }
 
-.dd-item-card:hover {
+.dd-item-card-tile:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dd-item-card-tile:not(:disabled):hover {
   background: #fafafa;
   box-shadow: var(--shadow-md);
+}
+
+.dd-item-card-tile .dd-item-visual {
+  width: 100%;
+  height: auto;
+  flex: none;
+  aspect-ratio: 5 / 3;
+  min-height: 0;
+  border-radius: 0;
+  background: linear-gradient(135deg, #fff5f3 0%, #ffe8e4 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dd-item-card-tile .dd-item-icon {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  line-height: 1;
+}
+
+.dd-item-card-tile .dd-item-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex: 1;
+  min-height: 5.25rem;
+  padding: 0.55rem 0.6rem 0.65rem;
+}
+
+.dd-item-card-tile .dd-item-name {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.dd-item-card-tile .dd-item-name-text {
+  display: inline;
+}
+
+.dd-item-card-tile .dd-item-code {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.3rem;
+}
+
+.dd-item-card-tile .dd-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.dd-item-card-tile .dd-item-price {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dd-item-card-tile .dd-item-customizable {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--brand);
+  white-space: normal;
+  word-break: break-word;
 }
 
 .dd-item-visual {
@@ -1728,11 +1816,92 @@ textarea:focus {
   width: 100%;
   max-width: 440px;
   max-height: 90vh;
-  overflow: auto;
+  overflow: hidden;
   background: #fff;
   border-radius: var(--radius) var(--radius) 0 0;
-  padding: 1.5rem;
+  padding: 0;
   box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.dd-modal-sheet {
+  max-width: 480px;
+}
+
+.dd-modal-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.5rem;
+  padding-bottom: 0.75rem;
+}
+
+.dd-modal-section {
+  margin-top: 1rem;
+}
+
+.dd-modal-section-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dd-option-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.75rem, 1fr));
+  gap: 0.45rem;
+}
+
+.dd-option-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.4rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.dd-option-chip:hover {
+  background: #fafafa;
+}
+
+.dd-option-chip.selected {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.dd-option-chip-name {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.dd-option-chip-price {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dd-preferences-compact {
+  margin-top: 1rem;
+}
+
+.dd-modal-footer-sticky {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: #fff;
 }
 
 @media (min-width: 640px) {
@@ -1847,6 +2016,15 @@ label.dd-option-row {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border);
+}
+
+.dd-modal-footer-sticky .dd-modal-qty {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.dd-modal-footer-sticky .dd-modal-total {
+  margin-bottom: 0.65rem;
 }
 
 .dd-modal-total {
@@ -3021,14 +3199,31 @@ label.dd-option-row {
     padding-bottom: 6rem;
   }
 
-  .dd-item-card {
-    grid-template-columns: 72px 1fr auto;
-    padding: 0.85rem;
+  .dd-item-list {
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: 0.55rem;
   }
 
-  .dd-item-visual {
-    width: 72px;
-    height: 72px;
+  .dd-item-card-tile .dd-item-body {
+    min-height: 4.75rem;
+    padding: 0.5rem 0.55rem 0.6rem;
+  }
+
+  .dd-item-card-tile .dd-item-name {
+    font-size: 0.78rem;
+  }
+
+  .dd-option-chip-grid {
+    grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr));
+  }
+
+  .dd-modal-scroll {
+    padding: 1.15rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .dd-modal-footer-sticky {
+    padding: 0.85rem 1.15rem 1rem;
   }
 
   .em-stats {
@@ -3186,11 +3381,13 @@ label.dd-option-row {
     position: fixed;
     top: 0;
     left: 0;
-    height: 100vh;
+    height: 90vh;
     transform: translateX(-100%);
     transition: transform 0.22s ease;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
   }
+
+  .sidebar-toggle.hidden { display: none !important; }
 
   .app-layout.sidebar-open .sidebar {
     transform: translateX(0);
@@ -3235,6 +3432,10 @@ label.dd-option-row {
 
   .dd-layout {
     grid-template-columns: 1fr 300px;
+  }
+
+  .dd-item-list {
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
   }
 
   .dd-cart-desktop {

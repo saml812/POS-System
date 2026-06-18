@@ -11,7 +11,7 @@ export function Layout() {
     <div className={`app-layout ${sidebarOpen ? "sidebar-open" : ""}`}>
       <button
         type="button"
-        className="sidebar-toggle"
+        className={`sidebar-toggle ${sidebarOpen ? 'hidden' : ''}`}
         aria-label={t("nav.menu")}
         onClick={() => setSidebarOpen((open) => !open)}
       >
@@ -27,6 +27,7 @@ export function Layout() {
           aria-label={t("common.close")}
           onClick={() => setSidebarOpen(false)}
         />
+
       )}
 
       <Sidebar onNavigate={() => setSidebarOpen(false)} />

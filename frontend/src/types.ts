@@ -21,6 +21,7 @@ export type MenuItemModifier = {
   name: string;
   priceDelta: number;
   sortOrder: number;
+  optionGroup?: string | null;
   isAvailable: boolean;
   createdAt: string;
   updatedAt: string;

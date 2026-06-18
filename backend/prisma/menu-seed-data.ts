@@ -3,6 +3,7 @@ export type SeedModifier = {
   name: string;
   priceDelta: number;
   sortOrder: number;
+  group?: string;
 };
 
 export type SeedItem = {
@@ -26,19 +27,20 @@ export type SeedCategory = {
 type CustomizationMode = false | "ingredients" | "with-rice" | "combo";
 
 const CUSTOMIZABLE_INGREDIENTS = [
-  "Egg",
-  "Onion",
-  "Broccoli",
-  "Carrot",
-  "Peas",
-  "Celery",
-  "Mixed Vegetables",
   "Shrimp",
   "Chicken",
   "Beef",
-  "Pork",
   "Ham",
-  "Napa",
+  "Pork",
+  "Meats",
+  "Egg",
+  "Vegetables",
+  "Onion",
+  "Carrot",
+  "Peas",
+  "Broccoli",
+  "Napa Cabbage",
+  "Celery",
   "Sauce",
   "Brown Sauce",
   "Sweet & Sour Sauce",
@@ -48,6 +50,7 @@ const CUSTOMIZABLE_INGREDIENTS = [
 ] as const;
 
 const PROTEIN_EXTRA_PRICE = 3.5;
+const MEATS_EXTRA_PRICE = 4.5;
 const BEEF_EXTRA_PRICE = 4;
 const BROCCOLI_EXTRA_PRICE = 3.5;
 const SAUCE_EXTRA_PRICE = 1;
@@ -84,6 +87,8 @@ function extraPrice(ingredient: (typeof CUSTOMIZABLE_INGREDIENTS)[number]): numb
   }
 
   if (ingredient === "Beef") return BEEF_EXTRA_PRICE;
+
+  if (ingredient === "Meats") return MEATS_EXTRA_PRICE;
 
   if (
     ingredient === "Sauce" ||
@@ -132,12 +137,25 @@ function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModif
     name: "No Rice",
     priceDelta: 0,
     sortOrder: sortOrder++,
+    group: "rice",
   });
 
   if (mode === "with-rice") {
     options.push(
-      { id: `${itemId}-rice-steam`, name: "Steam Rice", priceDelta: 0, sortOrder: sortOrder++ },
-      { id: `${itemId}-rice-fried`, name: "Fried Rice", priceDelta: 0, sortOrder: sortOrder++ },
+      {
+        id: `${itemId}-rice-steam`,
+        name: "Steam Rice",
+        priceDelta: 0,
+        sortOrder: sortOrder++,
+        group: "rice",
+      },
+      {
+        id: `${itemId}-rice-fried`,
+        name: "Fried Rice",
+        priceDelta: 0,
+        sortOrder: sortOrder++,
+        group: "rice",
+      },
     );
   }
 
@@ -149,6 +167,7 @@ function riceSideOptions(itemId: string, mode: "with-rice" | "combo"): SeedModif
       name: swap.name,
       priceDelta: swap.price,
       sortOrder: sortOrder++,
+      group: "rice",
     });
   }
 

@@ -94,6 +94,7 @@ model MenuItemOption {
   menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   name        String
   priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
+  optionGroup String?
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())

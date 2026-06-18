@@ -19,7 +19,27 @@ const demoUsers = [
   { email: "manager2@demo.com", role: "MANAGER" as const },
 ];
 
-function modifierUpsertArgs(modifier: SeedModifier, menuItemId: string) {
+function optionUpsertArgs(modifier: SeedModifier, menuItemId: string) {
+  return {
+    update: {
+      name: modifier.name,
+      priceDelta: modifier.priceDelta,
+      sortOrder: modifier.sortOrder,
+      optionGroup: modifier.group ?? null,
+      menuItemId,
+    },
+    create: {
+      id: modifier.id,
+      name: modifier.name,
+      priceDelta: modifier.priceDelta,
+      sortOrder: modifier.sortOrder,
+      optionGroup: modifier.group ?? null,
+      menuItemId,
+    },
+  };
+}
+
+function sizeUpsertArgs(modifier: SeedModifier, menuItemId: string) {
   return {
     update: {
       name: modifier.name,
@@ -121,7 +141,7 @@ async function main() {
       for (const option of item.options ?? []) {
         await prisma.menuItemOption.upsert({
           where: { id: option.id },
-          ...modifierUpsertArgs(option, item.id),
+          ...optionUpsertArgs(option, item.id),
         });
       }
 
@@ -136,7 +156,7 @@ async function main() {
       for (const size of item.sizes ?? []) {
         await prisma.menuItemSize.upsert({
           where: { id: size.id },
-          ...modifierUpsertArgs(size, item.id),
+          ...sizeUpsertArgs(size, item.id),
         });
       }
     }

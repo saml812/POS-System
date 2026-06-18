@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "../context/LocaleContext";
-import type { MenuItem } from "../types";
+import type { MenuItem, MenuItemOption } from "../types";
 import { formatMoney, formatPriceDelta, lineUnitPrice } from "../utils/order";
 
 export type CartItemDraft = {
@@ -23,6 +23,29 @@ type AddToCartModalProps = {
   onClose: () => void;
 };
 
+type OptionSection = {
+  key: string;
+  label: string;
+  options: MenuItemOption[];
+  exclusive: boolean;
+};
+
+function defaultOptionIds(itemId: string, options: MenuItemOption[]): string[] {
+  const riceOptions = options.filter((option) => option.optionGroup === "rice");
+  if (riceOptions.length === 0) return [];
+
+  const steam = riceOptions.find((option) => option.id === `${itemId}-rice-steam`);
+  if (steam) return [steam.id];
+
+  const none = riceOptions.find((option) => option.id === `${itemId}-rice-none`);
+  return none ? [none.id] : [];
+}
+
+function groupLabel(group: string, t: (key: string) => string): string {
+  if (group === "rice") return t("placeOrder.selectRice");
+  return t("placeOrder.selectOptions");
+}
+
 export function AddToCartModal({
   item,
   mode = "add",
@@ -40,7 +63,10 @@ export function AddToCartModal({
     [item.sizes],
   );
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(initial?.optionIds ?? []),
+    () =>
+      new Set(
+        initial?.optionIds ?? defaultOptionIds(item.id, options),
+      ),
   );
   const [sizeId, setSizeId] = useState<string | null>(
     initial?.sizeId ?? null,
@@ -48,14 +74,60 @@ export function AddToCartModal({
   const [preferences, setPreferences] = useState(initial?.preferences ?? "");
   const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
 
+  const optionSections = useMemo(() => {
+    const sections: OptionSection[] = [];
+    const grouped = new Map<string, MenuItemOption[]>();
+    const ungrouped: MenuItemOption[] = [];
+
+    for (const option of options) {
+      if (option.optionGroup) {
+        const group = grouped.get(option.optionGroup) ?? [];
+        group.push(option);
+        grouped.set(option.optionGroup, group);
+      } else {
+        ungrouped.push(option);
+      }
+    }
+
+    const orderedGroups = [...grouped.entries()].sort(([a], [b]) => {
+      if (a === "rice") return -1;
+      if (b === "rice") return 1;
+      return a.localeCompare(b);
+    });
+
+    for (const [group, groupOptions] of orderedGroups) {
+      sections.push({
+        key: group,
+        label: groupLabel(group, t),
+        options: groupOptions,
+        exclusive: true,
+      });
+    }
+
+    if (ungrouped.length > 0) {
+      sections.push({
+        key: "extras",
+        label: t("placeOrder.selectExtras"),
+        options: ungrouped,
+        exclusive: false,
+      });
+    }
+
+    return sections;
+  }, [options, t]);
+
   useEffect(() => {
-    setSelected(new Set(initial?.optionIds ?? []));
+    setSelected(
+      new Set(
+        initial?.optionIds ?? defaultOptionIds(item.id, options),
+      ),
+    );
     setSizeId(
       initial?.sizeId ?? (sizes.length > 0 ? sizes[0].id : null),
     );
     setPreferences(initial?.preferences ?? "");
     setQuantity(initial?.quantity ?? 1);
-  }, [item.id, sizes, initial]);
+  }, [item.id, sizes, initial, options]);
 
   const selectedOptions = useMemo(
     () => options.filter((option) => selected.has(option.id)),
@@ -73,6 +145,22 @@ export function AddToCartModal({
   ]);
 
   const lineTotal = unitPrice * quantity;
+
+  function selectExclusiveOption(option: MenuItemOption) {
+    const group = option.optionGroup;
+    if (!group) return;
+
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const candidate of options) {
+        if (candidate.optionGroup === group) {
+          next.delete(candidate.id);
+        }
+      }
+      next.add(option.id);
+      return next;
+    });
+  }
 
   function toggleOption(optionId: string) {
     setSelected((current) => {
@@ -94,10 +182,32 @@ export function AddToCartModal({
     onConfirm([...selected], sizeId, trimmed || undefined, quantity);
   }
 
+  function renderOptionChip(option: MenuItemOption, exclusive: boolean) {
+    const isSelected = selected.has(option.id);
+    const priceLabel = formatPriceDelta(option.priceDelta);
+
+    return (
+      <button
+        key={option.id}
+        type="button"
+        className={`dd-option-chip ${isSelected ? "selected" : ""}`}
+        aria-pressed={isSelected}
+        onClick={() =>
+          exclusive ? selectExclusiveOption(option) : toggleOption(option.id)
+        }
+      >
+        <span className="dd-option-chip-name">{option.name}</span>
+        {priceLabel ? (
+          <span className="dd-option-chip-price">{priceLabel}</span>
+        ) : null}
+      </button>
+    );
+  }
+
   return (
     <div className="dd-modal-backdrop" onClick={onClose}>
       <div
-        className="dd-modal"
+        className="dd-modal dd-modal-sheet"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -111,105 +221,91 @@ export function AddToCartModal({
         >
           ×
         </button>
-        <h3 id="add-item-title">
-          {mode === "edit" ? t("placeOrder.editItemInCart") : item.name}
-        </h3>
-        {mode === "edit" ? (
-          <p className="dd-item-desc muted">{item.name}</p>
-        ) : null}
-        {item.description && mode === "add" ? (
-          <p className="dd-item-desc">{item.description}</p>
-        ) : null}
 
-        {sizes.length > 0 ? (
-          <>
-            <p className="muted">{t("placeOrder.selectSize")}</p>
-            <ul className="dd-option-list">
-              {sizes.map((size) => (
-                <li key={size.id}>
-                  <label
-                    className={`dd-option-row ${sizeId === size.id ? "selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="size"
-                      className="dd-option-check"
-                      checked={sizeId === size.id}
-                      onChange={() => setSizeId(size.id)}
-                    />
-                    <span className="dd-option-name">{size.name}</span>
-                    <span className="dd-option-price">
-                      {formatPriceDelta(size.priceDelta)}
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
+        <div className="dd-modal-scroll">
+          <h3 id="add-item-title">
+            {mode === "edit" ? t("placeOrder.editItemInCart") : item.name}
+          </h3>
+          {mode === "edit" ? (
+            <p className="dd-item-desc muted">{item.name}</p>
+          ) : null}
+          {item.description && mode === "add" ? (
+            <p className="dd-item-desc">{item.description}</p>
+          ) : null}
 
-        {options.length > 0 ? (
-          <>
-            <p className="muted">{t("placeOrder.selectOptions")}</p>
-            <ul className="dd-option-list">
-              {options.map((option) => (
-                <li key={option.id}>
-                  <label
-                    className={`dd-option-row ${selected.has(option.id) ? "selected" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="dd-option-check"
-                      checked={selected.has(option.id)}
-                      onChange={() => toggleOption(option.id)}
-                    />
-                    <span className="dd-option-name">{option.name}</span>
-                    <span className="dd-option-price">
-                      {formatPriceDelta(option.priceDelta)}
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
+          {sizes.length > 0 ? (
+            <section className="dd-modal-section">
+              <p className="dd-modal-section-label">{t("placeOrder.selectSize")}</p>
+              <div className="dd-option-chip-grid">
+                {sizes.map((size) => {
+                  const isSelected = sizeId === size.id;
+                  return (
+                    <button
+                      key={size.id}
+                      type="button"
+                      className={`dd-option-chip ${isSelected ? "selected" : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => setSizeId(size.id)}
+                    >
+                      <span className="dd-option-chip-name">{size.name}</span>
+                      <span className="dd-option-chip-price">
+                        {formatPriceDelta(size.priceDelta)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
-        <label className="dd-preferences-field">
-          <span className="dd-preferences-label">{t("placeOrder.preferences")}</span>
-          <textarea
-            className="dd-preferences-input"
-            value={preferences}
-            onChange={(e) => setPreferences(e.target.value)}
-            placeholder={t("placeOrder.preferencesPlaceholder")}
-            rows={2}
-          />
-        </label>
+          {optionSections.map((section) => (
+            <section key={section.key} className="dd-modal-section">
+              <p className="dd-modal-section-label">{section.label}</p>
+              <div className="dd-option-chip-grid">
+                {section.options.map((option) =>
+                  renderOptionChip(option, section.exclusive),
+                )}
+              </div>
+            </section>
+          ))}
 
-        <div className="dd-modal-qty">
-          <span className="dd-modal-qty-label">{t("placeOrder.quantity")}</span>
-          <div className="dd-qty-control dd-modal-qty-control">
-            <button
-              type="button"
-              className="dd-qty-btn"
-              onClick={() => setQuantity((value) => Math.max(1, value - 1))}
-              disabled={quantity <= 1}
-              aria-label={t("placeOrder.decreaseQty")}
-            >
-              −
-            </button>
-            <span className="dd-qty-value">{quantity}</span>
-            <button
-              type="button"
-              className="dd-qty-btn"
-              onClick={() => setQuantity((value) => value + 1)}
-              aria-label={t("placeOrder.increaseQty")}
-            >
-              +
-            </button>
-          </div>
+          <label className="dd-preferences-field dd-preferences-compact">
+            <span className="dd-preferences-label">{t("placeOrder.preferences")}</span>
+            <textarea
+              className="dd-preferences-input"
+              value={preferences}
+              onChange={(e) => setPreferences(e.target.value)}
+              placeholder={t("placeOrder.preferencesPlaceholder")}
+              rows={2}
+            />
+          </label>
         </div>
 
-        <div className="dd-modal-footer">
+        <div className="dd-modal-footer-sticky">
+          <div className="dd-modal-qty">
+            <span className="dd-modal-qty-label">{t("placeOrder.quantity")}</span>
+            <div className="dd-qty-control dd-modal-qty-control">
+              <button
+                type="button"
+                className="dd-qty-btn"
+                onClick={() => setQuantity((value) => Math.max(1, value - 1))}
+                disabled={quantity <= 1}
+                aria-label={t("placeOrder.decreaseQty")}
+              >
+                −
+              </button>
+              <span className="dd-qty-value">{quantity}</span>
+              <button
+                type="button"
+                className="dd-qty-btn"
+                onClick={() => setQuantity((value) => value + 1)}
+                aria-label={t("placeOrder.increaseQty")}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
           <p className="dd-modal-total">
             {quantity > 1
               ? t("placeOrder.lineTotal", {

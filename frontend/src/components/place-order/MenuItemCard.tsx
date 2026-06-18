@@ -14,6 +14,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   pork: "🥩",
   beef: "🥩",
   shrimp: "🦐",
+  drinks: "🥤",
 };
 
 type MenuItemCardProps = {
@@ -35,37 +36,32 @@ export function MenuItemCard({
     (item.options?.length ?? 0) > 0 || (item.sizes?.length ?? 0) > 0;
 
   return (
-    <article className="dd-item-card">
+    <button
+      type="button"
+      className="dd-item-card-tile"
+      disabled={!canAdd}
+      aria-label={t("placeOrder.addItem", { name: item.name })}
+      onClick={onAdd}
+    >
       <div className="dd-item-visual" aria-hidden>
         <span className="dd-item-icon">{icon}</span>
       </div>
       <div className="dd-item-body">
-        <div className="dd-item-head">
-          <h4 className="dd-item-name">
-            {item.itemNumber && (
-              <span className="dd-item-code">{item.itemNumber}</span>
-            )}
-            {item.name}
-          </h4>
+        <h4 className="dd-item-name">
+          {item.itemNumber ? (
+            <span className="dd-item-code">{item.itemNumber}</span>
+          ) : null}
+          <span className="dd-item-name-text">{item.name}</span>
+        </h4>
+        <div className="dd-item-meta">
           <span className="dd-item-price">{formatMoney(item.price)}</span>
+          {hasOptions ? (
+            <span className="dd-item-customizable">
+              {t("placeOrder.customizable")}
+            </span>
+          ) : null}
         </div>
-        {item.description && (
-          <p className="dd-item-desc">{item.description}</p>
-        )}
-        {hasOptions && (
-          <p className="dd-item-customizable">{t("placeOrder.customizable")}</p>
-        )}
       </div>
-      {canAdd && (
-        <button
-          type="button"
-          className="dd-add-btn"
-          aria-label={t("placeOrder.addItem", { name: item.name })}
-          onClick={onAdd}
-        >
-          +
-        </button>
-      )}
-    </article>
+    </button>
   );
 }
