@@ -11,17 +11,20 @@ const ESC = "\x1b";
 const GS = "\x1d";
 const INIT = ESC + "@";
 const CUT = GS + "V\x00";
-const LF = "\r\n";
+const LINE_FEED = "\n";
 const PRINTER_TIMEOUT_MS = 5000;
 const RECEIPT_WIDTH = 32;
 
 function sanitizeForPrinter(text) {
   return String(text ?? "")
+    .replace(/\r/g, "")
     .replace(/\u2026/g, "...")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2013\u2014]/g, "-")
-    .replace(/[^\x20-\x7E]/g, "");
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\/+$/g, "")
+    .trimEnd();
 }
 
 function money(amount) {
@@ -39,18 +42,25 @@ function truncate(text, max) {
 }
 
 function line(text = "") {
-  return `${text}${LF}`;
+  return `${text}${LINE_FEED}`;
 }
 
 function blank() {
   return "";
 }
 
+function formatLeftLine(text, width = RECEIPT_WIDTH) {
+  const clipped = truncate(upper(text), width);
+  if (clipped.length >= width) return clipped;
+  return clipped + " ".repeat(width - clipped.length);
+}
+
 function center(text, width = RECEIPT_WIDTH) {
   const value = upper(text);
   if (value.length >= width) return value.slice(0, width);
-  const pad = Math.floor((width - value.length) / 2);
-  return " ".repeat(pad) + value;
+  const leftPad = Math.floor((width - value.length) / 2);
+  const rightPad = width - value.length - leftPad;
+  return " ".repeat(leftPad) + value + " ".repeat(rightPad);
 }
 
 function centerAddressLines(address) {
@@ -123,20 +133,20 @@ function normalizeItem(item) {
 function buildItemLines(rawItem) {
   const item = normalizeItem(rawItem);
   const lines = [];
-  const header = `${item.quantity}X ${itemCodePrefix(item)}${item.name}`;
-  lines.push(truncate(upper(header), RECEIPT_WIDTH));
+  const header = `${item.quantity}x ${itemCodePrefix(item)}${item.name}`;
+  lines.push(formatLeftLine(header));
 
   if (item.sizeName) {
-    lines.push(truncate(upper(`  ${item.sizeName}`), RECEIPT_WIDTH));
+    lines.push(formatLeftLine(`  ${item.sizeName}`));
   }
 
   if (item.options.length > 0) {
     const optionNames = item.options.map((option) => option.name).join(", ");
-    lines.push(truncate(upper(`  ${optionNames}`), RECEIPT_WIDTH));
+    lines.push(formatLeftLine(`  ${optionNames}`));
   }
 
   if (item.preferences) {
-    lines.push(truncate(upper(`  ${item.preferences}`), RECEIPT_WIDTH));
+    lines.push(formatLeftLine(`  ${item.preferences}`));
   }
 
   const lineTotal = money(item.price * item.quantity);
@@ -149,18 +159,18 @@ function buildPaymentLines(order) {
 
   if (order.paidStatus === "PAID") {
     if (order.tenderType === "CASH") {
-      lines.push(upper("PAID: CASH"));
+      lines.push(formatLeftLine("PAID: CASH"));
     } else if (order.tenderType === "CARD") {
-      lines.push(upper("PAID: CARD"));
+      lines.push(formatLeftLine("PAID: CARD"));
     } else if (order.tenderType === "SPLIT") {
-      lines.push(upper(`PAID: CARD ${money(order.cardAmount ?? 0)}`));
-      lines.push(upper(`       CASH ${money(order.cashAmount ?? 0)}`));
+      lines.push(formatLeftLine(`PAID: CARD ${money(order.cardAmount ?? 0)}`));
+      lines.push(formatLeftLine(`       CASH ${money(order.cashAmount ?? 0)}`));
     }
     return lines;
   }
 
   if (order.payAtPickup) {
-    lines.push(upper("PAY AT PICKUP"));
+    lines.push(formatLeftLine("PAY AT PICKUP"));
   }
 
   return lines;
@@ -313,7 +323,7 @@ export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
 
 function buildReceiptBuffer(order, config) {
   const lines = buildOrderReceiptLines(order, config);
-  const body = `${INIT}${lines.map(line).join("")}${LF}${CUT}`;
+  const body = `${INIT}${lines.map(line).join("")}${LINE_FEED}${CUT}`;
   return Buffer.from(body, "ascii");
 }
 
@@ -347,7 +357,7 @@ function buildTestReceiptBuffer(config) {
   };
 
   const lines = buildOrderReceiptLines(sampleOrder, config);
-  const body = `${INIT}${lines.map(line).join("")}${LF}${CUT}`;
+  const body = `${INIT}${lines.map(line).join("")}${LINE_FEED}${CUT}`;
   return Buffer.from(body, "ascii");
 }
 
