@@ -360,6 +360,8 @@ export const translations = {
       printerSerialHint:
         "Pair the printer to the server PC via Bluetooth, then find the outgoing COM port in Device Manager.",
       storeName: "Store name on receipt",
+      storeAddress: "Store address on receipt",
+      storeAddressPlaceholder: "123 Main St, City, ST",
       testReceipt: "Print test receipt",
       receiptConfigured: "Printer configured",
       receiptNotConfigured: "Printer not configured",
@@ -719,6 +721,8 @@ export const translations = {
       printerSerialHint:
         "将打印机通过蓝牙配对到服务器电脑，然后在设备管理器中查看传出 COM 端口。",
       storeName: "收据店名",
+      storeAddress: "收据店址",
+      storeAddressPlaceholder: "123 Main St, City, ST",
       testReceipt: "打印测试收据",
       receiptConfigured: "打印机已配置",
       receiptNotConfigured: "打印机未配置",

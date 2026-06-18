@@ -27,6 +27,7 @@ export function SettingsPage() {
   const [printerComPort, setPrinterComPort] = useState("");
   const [printerBaudRate, setPrinterBaudRate] = useState("9600");
   const [storeName, setStoreName] = useState("POS");
+  const [storeAddress, setStoreAddress] = useState("");
 
   const applySettings = useCallback((next: Settings) => {
     setSettings(next);
@@ -39,6 +40,7 @@ export function SettingsPage() {
     setPrinterComPort(next.receipt.printerComPort ?? "");
     setPrinterBaudRate(String(next.receipt.printerBaudRate));
     setStoreName(next.receipt.storeName);
+    setStoreAddress(next.receipt.storeAddress ?? "");
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -97,6 +99,7 @@ export function SettingsPage() {
           printerComPort: printerComPort.trim(),
           printerBaudRate: Number(printerBaudRate),
           storeName: storeName.trim(),
+          storeAddress: storeAddress.trim(),
         });
         applySettings(result.settings);
       },
@@ -296,6 +299,16 @@ export function SettingsPage() {
                     className="em-input"
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
+                    disabled={receiptBusy}
+                  />
+                </label>
+                <label className="em-field em-field-full">
+                  <span className="em-field-label">{t("settings.storeAddress")}</span>
+                  <input
+                    className="em-input"
+                    value={storeAddress}
+                    onChange={(e) => setStoreAddress(e.target.value)}
+                    placeholder={t("settings.storeAddressPlaceholder")}
                     disabled={receiptBusy}
                   />
                 </label>

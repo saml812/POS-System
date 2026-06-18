@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 
 // Sends raw ESC/POS bytes to a named Windows printer via the spooler.
-// Avoids the unmaintained `printer` native npm package.
 
 const RAW_PRINTER_HELPER = String.raw`
 Add-Type -TypeDefinition @"

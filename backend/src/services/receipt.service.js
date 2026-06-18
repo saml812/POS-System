@@ -19,25 +19,126 @@ function money(amount) {
   return `$${Number(amount).toFixed(2)}`;
 }
 
+function upper(text) {
+  return String(text ?? "").toUpperCase();
+}
+
 function truncate(text, max) {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1)}…`;
+  const value = String(text ?? "");
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
 }
 
 function line(text = "") {
   return `${text}${LF}`;
 }
 
+function blank() {
+  return "";
+}
+
 function center(text, width = RECEIPT_WIDTH) {
-  if (text.length >= width) return text.slice(0, width);
-  const pad = Math.floor((width - text.length) / 2);
-  return " ".repeat(pad) + text;
+  const value = upper(text);
+  if (value.length >= width) return value.slice(0, width);
+  const pad = Math.floor((width - value.length) / 2);
+  return " ".repeat(pad) + value;
 }
 
 function padLine(left, right, width = RECEIPT_WIDTH) {
-  const spaces = width - left.length - right.length;
-  if (spaces < 1) return truncate(`${left} ${right}`, width);
-  return `${left}${" ".repeat(spaces)}${right}`;
+  const leftText = upper(left);
+  const rightText = upper(right);
+  const spaces = width - leftText.length - rightText.length;
+  if (spaces < 1) return truncate(`${leftText} ${rightText}`, width);
+  return `${leftText}${" ".repeat(spaces)}${rightText}`;
+}
+
+function formatDateTime(value) {
+  const date = value ? new Date(value) : new Date();
+  return upper(
+    date.toLocaleString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }),
+  );
+}
+
+function orderTypeLabel(order) {
+  return order.payAtPickup ? "CALL-IN" : "WALK-IN";
+}
+
+function isEditedItem(item) {
+  return Boolean(
+    item.sizeName ||
+      (item.options?.length ?? 0) > 0 ||
+      item.preferences?.trim(),
+  );
+}
+
+function itemCodePrefix(item) {
+  return item.itemCode ? `${item.itemCode} ` : "";
+}
+
+function buildPlainItemLine(item) {
+  const qtyLabel = `${item.quantity}X`;
+  const suffix = ` - ${money(Number(item.price) * item.quantity)}`;
+  const prefix = `${qtyLabel} ${itemCodePrefix(item)}`;
+  const maxNameLen = RECEIPT_WIDTH - prefix.length - suffix.length;
+
+  if (maxNameLen < 1) {
+    return truncate(upper(`${prefix}${suffix}`), RECEIPT_WIDTH);
+  }
+
+  return upper(`${prefix}${truncate(item.name, maxNameLen)}${suffix}`);
+}
+
+function buildEditedItemLines(item) {
+  const lines = [];
+  const header = `${item.quantity}X ${itemCodePrefix(item)}${item.name}`;
+  lines.push(truncate(upper(header), RECEIPT_WIDTH));
+
+  if (item.sizeName) {
+    lines.push(truncate(upper(`  ${item.sizeName}`), RECEIPT_WIDTH));
+  }
+
+  const itemOptions = item.options ?? [];
+  if (itemOptions.length > 0) {
+    const optionNames = itemOptions.map((option) => option.name).join(", ");
+    lines.push(truncate(upper(`  ${optionNames}`), RECEIPT_WIDTH));
+  }
+
+  if (item.preferences?.trim()) {
+    lines.push(truncate(upper(`  ${item.preferences.trim()}`), RECEIPT_WIDTH));
+  }
+
+  const lineTotal = money(Number(item.price) * item.quantity);
+  lines.push(padLine("", lineTotal));
+  return lines;
+}
+
+function buildPaymentLines(order) {
+  const lines = [];
+
+  if (order.paidStatus === "PAID") {
+    if (order.tenderType === "CASH") {
+      lines.push(upper("PAID: CASH"));
+    } else if (order.tenderType === "CARD") {
+      lines.push(upper("PAID: CARD"));
+    } else if (order.tenderType === "SPLIT") {
+      lines.push(upper(`PAID: CARD ${money(order.cardAmount ?? 0)}`));
+      lines.push(upper(`       CASH ${money(order.cashAmount ?? 0)}`));
+    }
+    return lines;
+  }
+
+  if (order.payAtPickup) {
+    lines.push(upper("PAY AT PICKUP"));
+  }
+
+  return lines;
 }
 
 function sendToNetworkPrinter(buffer, config) {
@@ -151,34 +252,27 @@ function sendToPrinter(buffer) {
 export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
   const lines = [];
   const storeName = config.storeName || "POS";
+  const storeAddress = config.storeAddress?.trim();
 
+  lines.push(blank());
   lines.push(center(storeName));
-  lines.push(center(`Ticket #${order.ticketNumber}`));
-  lines.push("");
-  lines.push("-".repeat(RECEIPT_WIDTH));
+  if (storeAddress) {
+    lines.push(center(storeAddress));
+  }
+  lines.push(blank());
+  lines.push(center(formatDateTime(order.createdAt)));
+  lines.push(center(orderTypeLabel(order)));
+  lines.push(center(`TICKET #${order.ticketNumber}`));
+  lines.push(blank());
+  lines.push(upper("-".repeat(RECEIPT_WIDTH)));
 
   for (const item of order.items ?? []) {
-    const label = item.itemCode
-      ? `${item.quantity}x ${item.itemCode} ${item.name}`
-      : `${item.quantity}x ${item.name}`;
-    lines.push(truncate(label, RECEIPT_WIDTH));
-
-    if (item.sizeName) {
-      lines.push(`  ${truncate(item.sizeName, RECEIPT_WIDTH - 2)}`);
+    if (isEditedItem(item)) {
+      lines.push(...buildEditedItemLines(item));
+    } else {
+      lines.push(buildPlainItemLine(item));
     }
-
-    const itemOptions = item.options ?? [];
-    if (itemOptions.length > 0) {
-      const optionNames = itemOptions.map((option) => option.name).join(", ");
-      lines.push(`  ${truncate(optionNames, RECEIPT_WIDTH - 2)}`);
-    }
-
-    if (item.preferences?.trim()) {
-      lines.push(`  ${truncate(item.preferences.trim(), RECEIPT_WIDTH - 2)}`);
-    }
-
-    const lineTotal = Number(item.price) * item.quantity;
-    lines.push(padLine("", money(lineTotal)));
+    lines.push(blank());
   }
 
   const total = (order.items ?? []).reduce(
@@ -186,20 +280,14 @@ export function buildOrderReceiptLines(order, config = getReceiptConfig()) {
     0,
   );
 
-  lines.push("-".repeat(RECEIPT_WIDTH));
-  lines.push(padLine("Total", money(total)));
-
-  if (order.tenderType === "CASH") {
-    lines.push("Paid: CASH");
-  } else if (order.tenderType === "CARD") {
-    lines.push("Paid: CARD");
-  } else if (order.tenderType === "SPLIT") {
-    lines.push(`Card: ${money(order.cardAmount ?? 0)}`);
-    lines.push(`Cash: ${money(order.cashAmount ?? 0)}`);
-  }
-
-  lines.push("");
-  lines.push(center("Thank you!"));
+  lines.push(upper("-".repeat(RECEIPT_WIDTH)));
+  lines.push(padLine("TOTAL", money(total)));
+  lines.push(...buildPaymentLines(order));
+  lines.push(blank());
+  lines.push(center("THANK YOU!"));
+  lines.push(center("PLEASE COME AGAIN!"));
+  lines.push(blank());
+  lines.push(blank());
 
   return lines;
 }
@@ -210,13 +298,39 @@ function buildReceiptBuffer(order, config) {
 }
 
 function buildTestReceiptBuffer(config) {
-  return Buffer.from(
-    `${INIT}${line(center(config.storeName || "POS"))}${line(center("Test receipt"))}${line("")}${CUT}`,
-    "ascii",
-  );
+  const sampleOrder = {
+    ticketNumber: 1,
+    payAtPickup: false,
+    paidStatus: "PAID",
+    tenderType: "CASH",
+    createdAt: new Date(),
+    items: [
+      {
+        quantity: 1,
+        itemCode: "A1",
+        name: "Sample Item",
+        price: 9.99,
+        sizeName: null,
+        options: [],
+        preferences: null,
+      },
+      {
+        quantity: 2,
+        itemCode: "B2",
+        name: "Custom Bowl",
+        price: 12.5,
+        sizeName: "Large",
+        options: [{ name: "Extra Sauce" }],
+        preferences: "No onions",
+      },
+    ],
+  };
+
+  const lines = buildOrderReceiptLines(sampleOrder, config);
+  return Buffer.from(`${INIT}${lines.map(line).join("")}${CUT}`, "ascii");
 }
 
-export async function printCustomerReceipt(order) {
+async function printOrderReceipt(order) {
   const config = getReceiptConfig();
 
   if (!isReceiptConfigured(config)) {
@@ -229,6 +343,14 @@ export async function printCustomerReceipt(order) {
 
   const buffer = buildReceiptBuffer(order, config);
   return sendToPrinter(buffer);
+}
+
+export async function printCustomerReceipt(order) {
+  return printOrderReceipt(order);
+}
+
+export async function printCallInReceipt(order) {
+  return printOrderReceipt(order);
 }
 
 export async function printTestReceipt() {

@@ -3,7 +3,7 @@ import { prisma } from "../lib/db.js";
 import { getBusinessDate, getNextTicketNumber } from "../lib/tickets.js";
 import { emitOrderEvent } from "../lib/socket.js";
 import * as checkoutService from "./checkout.service.js";
-import { printCustomerReceipt } from "./receipt.service.js";
+import { printCustomerReceipt, printCallInReceipt } from "./receipt.service.js";
 
 const ACTOR = { id: true, email: true, role: true };
 const ITEMS = { items: { include: { options: true } } };
@@ -351,6 +351,16 @@ export async function createOrder(user, body) {
   });
 
   if (isCallIn) {
+    try {
+      await printCallInReceipt(created);
+    } catch (err) {
+      console.error(
+        "[receipt] call-in print failed",
+        created.id,
+        err.message,
+      );
+    }
+
     return publishOrder(toOrder(created), "order:created", "order:updated");
   }
 

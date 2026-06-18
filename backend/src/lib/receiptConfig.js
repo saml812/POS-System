@@ -10,6 +10,7 @@ const KEYS = {
   printerComPort: "receipt.printer_com_port",
   printerBaudRate: "receipt.printer_baud_rate",
   storeName: "receipt.store_name",
+  storeAddress: "receipt.store_address",
 };
 
 const DEFAULTS = {
@@ -17,6 +18,7 @@ const DEFAULTS = {
   [KEYS.printerPort]: "9100",
   [KEYS.printerBaudRate]: "9600",
   [KEYS.storeName]: "POS",
+  [KEYS.storeAddress]: "",
 };
 
 let cached = null;
@@ -31,6 +33,8 @@ function fromEnv() {
     printerBaudRate:
       process.env.RECEIPT_PRINTER_BAUD_RATE ?? DEFAULTS[KEYS.printerBaudRate],
     storeName: process.env.RECEIPT_STORE_NAME ?? DEFAULTS[KEYS.storeName],
+    storeAddress:
+      process.env.RECEIPT_STORE_ADDRESS ?? DEFAULTS[KEYS.storeAddress],
   };
 }
 
@@ -48,6 +52,7 @@ function readRows(rows) {
       byKey[KEYS.printerBaudRate] ?? env.printerBaudRate,
     ),
     storeName: byKey[KEYS.storeName] ?? env.storeName,
+    storeAddress: byKey[KEYS.storeAddress] ?? env.storeAddress,
   };
 }
 
@@ -83,6 +88,7 @@ export function toPublicReceiptSettings(config = getReceiptConfig()) {
     printerComPort: config.printerComPort || null,
     printerBaudRate: config.printerBaudRate,
     storeName: config.storeName,
+    storeAddress: config.storeAddress || null,
     configured: isReceiptConfigured(config),
   };
 }
@@ -128,6 +134,12 @@ export async function updateReceiptSettings(input = {}) {
   }
   if (input.storeName !== undefined) {
     updates.push({ key: KEYS.storeName, value: String(input.storeName).trim() });
+  }
+  if (input.storeAddress !== undefined) {
+    updates.push({
+      key: KEYS.storeAddress,
+      value: String(input.storeAddress).trim(),
+    });
   }
 
   if (updates.length === 0) {

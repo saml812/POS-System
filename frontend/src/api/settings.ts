@@ -13,6 +13,7 @@ export type ReceiptSettings = {
   printerComPort: string | null;
   printerBaudRate: number;
   storeName: string;
+  storeAddress: string | null;
   configured: boolean;
 };
 
@@ -47,6 +48,7 @@ export function updateReceiptSettings(data: {
   printerComPort?: string;
   printerBaudRate?: number;
   storeName?: string;
+  storeAddress?: string;
 }) {
   return apiRequest<{ settings: Settings }>("/settings/receipt", {
     method: "PATCH",
