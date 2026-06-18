@@ -14,6 +14,7 @@ const CUT = GS + "V\x00";
 const LINE_FEED = "\n";
 const PRINTER_TIMEOUT_MS = 5000;
 const RECEIPT_WIDTH = 32;
+const MODIFIER_INDENT = "     ";
 
 function sanitizeForPrinter(text) {
   return String(text ?? "")
@@ -23,7 +24,8 @@ function sanitizeForPrinter(text) {
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2013\u2014]/g, "-")
     .replace(/[^\x20-\x7E]/g, "")
-    .replace(/\/+$/g, "")
+    .replace(/\s*\/\s*\d+\s*$/g, "")
+    .replace(/\s*\/+\s*$/g, "")
     .trimEnd();
 }
 
@@ -51,8 +53,8 @@ function blank() {
 
 function formatLeftLine(text, width = RECEIPT_WIDTH) {
   const clipped = upper(text);
-  const safe = clipped.length > width ? clipped.slice(0, width) : clipped;
-  return safe + " ".repeat(width - safe.length);
+  // No right-padding — this printer renders pad spaces as a trailing "/".
+  return clipped.length > width ? clipped.slice(0, width) : clipped;
 }
 
 function wrapLeftLines(text, width = RECEIPT_WIDTH, indent = "") {
@@ -77,42 +79,6 @@ function wrapLeftLines(text, width = RECEIPT_WIDTH, indent = "") {
       formatLeftLine(`${indentStr}${remaining.slice(0, breakAt).trimEnd()}`),
     );
     remaining = remaining.slice(breakAt).trimStart();
-  }
-
-  return lines;
-}
-
-function wrapOptionLines(options, width = RECEIPT_WIDTH, indent = "  ") {
-  const names = options.map((option) => upper(option.name)).filter(Boolean);
-  if (names.length === 0) return [];
-
-  const indentStr = upper(indent);
-  const lines = [];
-  let current = indentStr;
-
-  for (let i = 0; i < names.length; i++) {
-    const piece = i === 0 ? names[i] : `, ${names[i]}`;
-
-    if (current.length + piece.length <= width) {
-      current += piece;
-      continue;
-    }
-
-    if (current.length > indentStr.length) {
-      lines.push(formatLeftLine(current));
-    }
-
-    const single = `${indentStr}${names[i]}`;
-    if (single.length > width) {
-      lines.push(...wrapLeftLines(names[i], width, indent));
-      current = indentStr;
-    } else {
-      current = single;
-    }
-  }
-
-  if (current.length > indentStr.length) {
-    lines.push(formatLeftLine(current));
   }
 
   return lines;
@@ -200,15 +166,15 @@ function buildItemLines(rawItem) {
   lines.push(...wrapLeftLines(header));
 
   if (item.sizeName) {
-    lines.push(...wrapLeftLines(item.sizeName, RECEIPT_WIDTH, "  "));
+    lines.push(...wrapLeftLines(item.sizeName, RECEIPT_WIDTH, MODIFIER_INDENT));
   }
 
-  if (item.options.length > 0) {
-    lines.push(...wrapOptionLines(item.options));
+  for (const option of item.options) {
+    lines.push(...wrapLeftLines(option.name, RECEIPT_WIDTH, MODIFIER_INDENT));
   }
 
   if (item.preferences) {
-    lines.push(...wrapLeftLines(item.preferences, RECEIPT_WIDTH, "  "));
+    lines.push(...wrapLeftLines(item.preferences, RECEIPT_WIDTH, MODIFIER_INDENT));
   }
 
   const lineTotal = money(item.price * item.quantity);
