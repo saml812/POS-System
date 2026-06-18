@@ -50,9 +50,72 @@ function blank() {
 }
 
 function formatLeftLine(text, width = RECEIPT_WIDTH) {
-  const clipped = truncate(upper(text), width);
-  if (clipped.length >= width) return clipped;
-  return clipped + " ".repeat(width - clipped.length);
+  const clipped = upper(text);
+  const safe = clipped.length > width ? clipped.slice(0, width) : clipped;
+  return safe + " ".repeat(width - safe.length);
+}
+
+function wrapLeftLines(text, width = RECEIPT_WIDTH, indent = "") {
+  const indentStr = upper(indent);
+  const value = upper(text);
+  if (!value) return [];
+
+  const lines = [];
+  let remaining = value;
+
+  while (remaining.length > 0) {
+    const maxContent = width - indentStr.length;
+    if (remaining.length <= maxContent) {
+      lines.push(formatLeftLine(`${indentStr}${remaining}`));
+      break;
+    }
+
+    let breakAt = remaining.lastIndexOf(" ", maxContent);
+    if (breakAt <= 0) breakAt = maxContent;
+
+    lines.push(
+      formatLeftLine(`${indentStr}${remaining.slice(0, breakAt).trimEnd()}`),
+    );
+    remaining = remaining.slice(breakAt).trimStart();
+  }
+
+  return lines;
+}
+
+function wrapOptionLines(options, width = RECEIPT_WIDTH, indent = "  ") {
+  const names = options.map((option) => upper(option.name)).filter(Boolean);
+  if (names.length === 0) return [];
+
+  const indentStr = upper(indent);
+  const lines = [];
+  let current = indentStr;
+
+  for (let i = 0; i < names.length; i++) {
+    const piece = i === 0 ? names[i] : `, ${names[i]}`;
+
+    if (current.length + piece.length <= width) {
+      current += piece;
+      continue;
+    }
+
+    if (current.length > indentStr.length) {
+      lines.push(formatLeftLine(current));
+    }
+
+    const single = `${indentStr}${names[i]}`;
+    if (single.length > width) {
+      lines.push(...wrapLeftLines(names[i], width, indent));
+      current = indentStr;
+    } else {
+      current = single;
+    }
+  }
+
+  if (current.length > indentStr.length) {
+    lines.push(formatLeftLine(current));
+  }
+
+  return lines;
 }
 
 function center(text, width = RECEIPT_WIDTH) {
@@ -133,20 +196,19 @@ function normalizeItem(item) {
 function buildItemLines(rawItem) {
   const item = normalizeItem(rawItem);
   const lines = [];
-  const header = `${item.quantity}x ${itemCodePrefix(item)}${item.name}`;
-  lines.push(formatLeftLine(header));
+  const header = `${item.quantity}X ${itemCodePrefix(item)}${item.name}`;
+  lines.push(...wrapLeftLines(header));
 
   if (item.sizeName) {
-    lines.push(formatLeftLine(`  ${item.sizeName}`));
+    lines.push(...wrapLeftLines(item.sizeName, RECEIPT_WIDTH, "  "));
   }
 
   if (item.options.length > 0) {
-    const optionNames = item.options.map((option) => option.name).join(", ");
-    lines.push(formatLeftLine(`  ${optionNames}`));
+    lines.push(...wrapOptionLines(item.options));
   }
 
   if (item.preferences) {
-    lines.push(formatLeftLine(`  ${item.preferences}`));
+    lines.push(...wrapLeftLines(item.preferences, RECEIPT_WIDTH, "  "));
   }
 
   const lineTotal = money(item.price * item.quantity);
@@ -164,7 +226,7 @@ function buildPaymentLines(order) {
       lines.push(formatLeftLine("PAID: CARD"));
     } else if (order.tenderType === "SPLIT") {
       lines.push(formatLeftLine(`PAID: CARD ${money(order.cardAmount ?? 0)}`));
-      lines.push(formatLeftLine(`       CASH ${money(order.cashAmount ?? 0)}`));
+      lines.push(formatLeftLine(`      CASH ${money(order.cashAmount ?? 0)}`));
     }
     return lines;
   }
